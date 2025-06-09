@@ -9,9 +9,9 @@ export function useSocket() {
   const [isConnected, setIsConnected] = useState(false)
 
   useEffect(() => {
-    const socketInstance = io("http://192.168.102.168:3001", {
+    const socketInstance = io({
       transports: ["websocket"],
-    })
+    });
 
     socketInstance.on("connect", () => {
       console.log("Connected to server")
