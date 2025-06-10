@@ -19,7 +19,7 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
   const [gameState, setGameState] = useState<GameState>(initialRoom.gameState)
   const [selectedPiece, setSelectedPiece] = useState<Position | null>(null)
   const [availableMoves, setAvailableMoves] = useState<Position[]>([])
-  const [myPlayer, setMyPlayer] = useState(() => room.players.find((p) => p.id === socket?.id))
+  const [myPlayer, setMyPlayer] = useState(() => room.players.find((p) => p.socketId === socket?.id))
 
   useEffect(() => {
     if (!socket) return
@@ -61,6 +61,13 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
       }))
     })
 
+    socket.on("playerReconnected", (playerId) => {
+      setRoom((prev) => ({
+        ...prev,
+        players: prev.players.map((p) => (p.id === playerId ? { ...p, isConnected: true } : p)),
+      }))
+    })
+
     return () => {
       socket.off("gameStateUpdated")
       socket.off("gameStarted")
@@ -68,6 +75,7 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
       socket.off("playerJoined")
       socket.off("playerLeft")
       socket.off("playerDisconnected")
+      socket.off("playerReconnected")
     }
   }, [])
 
@@ -211,19 +219,19 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
       if (isValidMove) {
         // Transform selected piece coordinates to actual coordinates
         const actualSelectedPos = transformPositionToActual(selectedPiece, myPlayer.color)
-        socket.emit("makeMove", actualSelectedPos, actualPos)
+        socket.emit("makeMove", actualSelectedPos, actualPos, myPlayer.id)
       }
     }
   }
 
   const startGame = () => {
-    if (!socket) return
-    socket.emit("startGame")
+    if (!socket || !myPlayer) return
+    socket.emit("startGame", myPlayer.id)
   }
 
   const resetGame = () => {
-    if (!socket) return
-    socket.emit("resetGame")
+    if (!socket || !myPlayer) return
+    socket.emit("resetGame", myPlayer.id)
   }
 
   const isRoomCreator = myPlayer?.id === room.players[0]?.id
@@ -258,7 +266,7 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
                   } ${isEliminated ? "opacity-50" : ""}`}
                 >
                   <div className={`w-4 h-4 rounded-full bg-${color}-400 mb-2`}></div>
-                  <p className="font-medium">{player?.name || "Waiting..."}</p>
+                  <p className="font-medium">{player?.name || (room.isGameStarted ? "No player" : "Waiting...")}</p>
                   <p className="text-sm text-gray-500">
                     {player?.isConnected === false ? "Disconnected" : player ? "Connected" : "Empty"}
                   </p>

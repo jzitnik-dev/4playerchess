@@ -2,6 +2,7 @@ import type { GameState, PieceColor, Position } from "./chess"
 
 export interface Player {
   id: string
+  socketId: string
   name: string
   color: PieceColor
   isConnected: boolean
@@ -35,9 +36,9 @@ export interface ClientToServerEvents {
   createRoom: (roomName: string, playerName: string) => void
   joinRoom: (roomId: string, playerName: string) => void
   joinRoomAgain: (roomId: string, playerId: string) => void
-  leaveRoom: () => void
-  makeMove: (from: Position, to: Position) => void
-  startGame: () => void
-  resetGame: () => void
+  leaveRoom: (playerId: string) => void
+  makeMove: (from: Position, to: Position, playerId: string) => void
+  startGame: (playerId: string) => void
+  resetGame: (playerId: string) => void
   getRooms: () => void
 }

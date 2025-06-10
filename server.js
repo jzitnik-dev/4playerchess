@@ -459,6 +459,10 @@ function executeMove(room, from, to) {
   return true
 }
 
+function generatePlayerId() {
+  return Math.random().toString(36).substring(2, 10).toUpperCase()
+}
+
 app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
     try {
@@ -484,8 +488,10 @@ app.prepare().then(() => {
 
     socket.on("createRoom", (roomName, playerName) => {
       const roomId = generateRoomId()
+      const playerId = generatePlayerId()
       const player = {
-        id: socket.id,
+        id: playerId,
+        socketId: socket.id,
         name: playerName,
         color: "red",
         isConnected: true,
@@ -514,7 +520,7 @@ app.prepare().then(() => {
       socket.join(roomId)
 
       socket.emit("roomCreated", room, player)
-      console.log(`Room created: ${roomId} by ${playerName}`)
+      console.log(`Room created: ${roomId} by ${playerName} (${playerId})`)
     })
 
     socket.on("joinRoom", (roomId, playerName) => {
@@ -542,8 +548,10 @@ app.prepare().then(() => {
         return
       }
 
+      const playerId = generatePlayerId()
       const player = {
-        id: socket.id,
+        id: playerId,
+        socketId: socket.id,
         name: playerName,
         color: availableColor,
         isConnected: true,
@@ -556,7 +564,7 @@ app.prepare().then(() => {
       socket.emit("roomJoined", room, player)
       socket.to(roomId).emit("playerJoined", player)
 
-      console.log(`${playerName} joined room ${roomId} as ${availableColor}`)
+      console.log(`${playerName} (${playerId}) joined room ${roomId} as ${availableColor}`)
     })
 
     socket.on("joinRoomAgain", (roomId, playerId) => {
@@ -566,19 +574,25 @@ app.prepare().then(() => {
         return
       }
 
-      if (!room.players.some(player => player.id = playerId)) {
+      const player = room.players.find((p) => p.id === playerId)
+      if (!player) {
         socket.emit("error", "Player not found")
+        return
       }
 
-      const player = room.players.find((player) => {
-        return player.id = playerId;
-      })
-      player.isConnected = true;
+      // Update player's socket ID and connection status
+      player.socketId = socket.id
+      player.isConnected = true
+      playerRooms.set(socket.id, roomId)
+      socket.join(roomId)
 
       socket.emit("roomJoined", room, player)
+      socket.to(roomId).emit("playerReconnected", playerId)
+
+      console.log(`${player.name} (${playerId}) reconnected to room ${roomId}`)
     })
 
-    socket.on("makeMove", (from, to) => {
+    socket.on("makeMove", (from, to, playerId) => {
       const roomId = playerRooms.get(socket.id)
       if (!roomId) {
         socket.emit("error", "Not in a room")
@@ -591,7 +605,7 @@ app.prepare().then(() => {
         return
       }
 
-      const player = room.players.find((p) => p.id === socket.id)
+      const player = room.players.find((p) => p.id === playerId)
       if (!player) {
         socket.emit("error", "Player not found")
         return
@@ -610,21 +624,24 @@ app.prepare().then(() => {
       // Validate and execute move
       const success = executeMove(room, from, to)
       if (success) {
-        console.log(`Move executed: ${player.name} moved from (${from.row},${from.col}) to (${to.row},${to.col})`)
+        console.log(
+          `Move executed: ${player.name} (${playerId}) moved from (${from.row},${from.col}) to (${to.row},${to.col})`,
+        )
         io.to(roomId).emit("gameStateUpdated", room.gameState)
       } else {
         socket.emit("error", "Invalid move")
       }
     })
 
-    socket.on("startGame", () => {
+    socket.on("startGame", (playerId) => {
       const roomId = playerRooms.get(socket.id)
       if (!roomId) return
 
       const room = rooms.get(roomId)
       if (!room) return
 
-      if (room.players[0]?.id !== socket.id) {
+      const player = room.players.find((p) => p.id === playerId)
+      if (!player || room.players[0]?.id !== playerId) {
         socket.emit("error", "Only room creator can start the game")
         return
       }
@@ -638,17 +655,18 @@ app.prepare().then(() => {
       io.to(roomId).emit("gameStarted")
       io.to(roomId).emit("gameStateUpdated", room.gameState)
 
-      console.log(`Game started in room ${roomId}`)
+      console.log(`Game started in room ${roomId} by ${player.name} (${playerId})`)
     })
 
-    socket.on("resetGame", () => {
+    socket.on("resetGame", (playerId) => {
       const roomId = playerRooms.get(socket.id)
       if (!roomId) return
 
       const room = rooms.get(roomId)
       if (!room) return
 
-      if (room.players[0]?.id !== socket.id) {
+      const player = room.players.find((p) => p.id === playerId)
+      if (!player || room.players[0]?.id !== playerId) {
         socket.emit("error", "Only room creator can reset the game")
         return
       }
@@ -667,7 +685,7 @@ app.prepare().then(() => {
       io.to(roomId).emit("gameReset")
       io.to(roomId).emit("gameStateUpdated", room.gameState)
 
-      console.log(`Game reset in room ${roomId}`)
+      console.log(`Game reset in room ${roomId} by ${player.name} (${playerId})`)
     })
 
     socket.on("getRooms", () => {
@@ -675,21 +693,21 @@ app.prepare().then(() => {
       socket.emit("roomsList", publicRooms)
     })
 
-    socket.on("leaveRoom", () => {
+    socket.on("leaveRoom", (playerId) => {
       const roomId = playerRooms.get(socket.id)
       if (!roomId) return
 
       const room = rooms.get(roomId)
       if (!room) return
 
-      room.players = room.players.filter((p) => p.id !== socket.id)
+      room.players = room.players.filter((p) => p.id !== playerId)
       playerRooms.delete(socket.id)
 
       if (room.players.length === 0) {
         rooms.delete(roomId)
         console.log(`Room ${roomId} deleted - no players left`)
       } else {
-        io.to(roomId).emit("playerLeft", socket.id)
+        io.to(roomId).emit("playerLeft", playerId)
       }
     })
 
@@ -699,10 +717,10 @@ app.prepare().then(() => {
       if (roomId) {
         const room = rooms.get(roomId)
         if (room) {
-          const player = room.players.find((p) => p.id === socket.id)
+          const player = room.players.find((p) => p.socketId === socket.id)
           if (player) {
             player.isConnected = false
-            io.to(roomId).emit("playerDisconnected", socket.id)
+            io.to(roomId).emit("playerDisconnected", player.id)
 
             const connectedPlayers = room.players.filter((p) => p.isConnected)
             if (connectedPlayers.length === 0 && !room.isGameStarted) {

@@ -18,7 +18,7 @@ export function MultiplayerChessLobby() {
 
   const joinRoomAgain = (roomId: string, playerId: string) => {
     if (!socket) {
-      return;
+      return
     }
     socket.emit("joinRoomAgain", roomId, playerId)
   }
@@ -28,15 +28,15 @@ export function MultiplayerChessLobby() {
 
     socket.on("roomCreated", (room, player) => {
       setCurrentRoom(room)
-      localStorage.setItem("roomId", room.id);
-      localStorage.setItem("playerId", player.id);
+      localStorage.setItem("roomId", room.id)
+      localStorage.setItem("playerId", player.id)
       setError("")
     })
 
     socket.on("roomJoined", (room, player) => {
       setCurrentRoom(room)
-      localStorage.setItem("roomId", room.id);
-      localStorage.setItem("playerId", player.id);
+      localStorage.setItem("roomId", room.id)
+      localStorage.setItem("playerId", player.id)
       setError("")
     })
 
@@ -57,8 +57,8 @@ export function MultiplayerChessLobby() {
         const updatedRoom = {
           ...currentRoom,
           players: [...currentRoom.players, player],
-        };
-        setCurrentRoom(updatedRoom);
+        }
+        setCurrentRoom(updatedRoom)
       }
     })
 
@@ -88,10 +88,10 @@ export function MultiplayerChessLobby() {
   }, [socket, isConnected, currentRoom])
 
   useEffect(() => {
-    if (localStorage.getItem("playerId") && localStorage.getItem("roomId")) {
-      joinRoomAgain(localStorage.getItem("roomId") || "", localStorage.getItem("playerId") || "");
+    if (socket && isConnected && localStorage.getItem("playerId") && localStorage.getItem("roomId")) {
+      joinRoomAgain(localStorage.getItem("roomId") || "", localStorage.getItem("playerId") || "")
     }
-  }, [socket, isConnected]);
+  }, [socket, isConnected])
 
   const createRoom = () => {
     if (!socket || !playerName.trim() || !roomName.trim()) {
@@ -110,10 +110,13 @@ export function MultiplayerChessLobby() {
   }
 
   const leaveRoom = () => {
-    if (!socket) return
-    localStorage.removeItem("roomId");
-    localStorage.removeItem("playerId");
-    socket.emit("leaveRoom")
+    if (!socket || !currentRoom) return
+    const myPlayer = currentRoom.players.find((p) => p.socketId === socket.id)
+    if (myPlayer) {
+      localStorage.removeItem("roomId")
+      localStorage.removeItem("playerId")
+      socket.emit("leaveRoom", myPlayer.id)
+    }
     setCurrentRoom(null)
   }
 
