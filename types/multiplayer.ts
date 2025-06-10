@@ -17,8 +17,8 @@ export interface Room {
 }
 
 export interface ServerToClientEvents {
-  roomCreated: (room: Room) => void
-  roomJoined: (room: Room) => void
+  roomCreated: (room: Room, me: Player) => void
+  roomJoined: (room: Room, me: Player) => void
   roomLeft: (room: Room) => void
   gameStateUpdated: (gameState: GameState) => void
   playerJoined: (player: Player) => void
@@ -34,6 +34,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   createRoom: (roomName: string, playerName: string) => void
   joinRoom: (roomId: string, playerName: string) => void
+  joinRoomAgain: (roomId: string, playerId: string) => void
   leaveRoom: () => void
   makeMove: (from: Position, to: Position) => void
   startGame: () => void

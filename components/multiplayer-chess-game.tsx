@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect } from "react"
 import type { Socket } from "socket.io-client"
 import type { Room } from "@/types/multiplayer"
@@ -71,7 +69,7 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
       socket.off("playerLeft")
       socket.off("playerDisconnected")
     }
-  }, [socket])
+  }, [])
 
   // Transform board coordinates based on player's perspective
   const transformBoardForPlayer = (playerColor: PieceColor | undefined): (Piece | null)[][] => {

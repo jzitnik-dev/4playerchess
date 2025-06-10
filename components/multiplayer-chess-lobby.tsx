@@ -16,16 +16,27 @@ export function MultiplayerChessLobby() {
   const [roomName, setRoomName] = useState("")
   const [error, setError] = useState("")
 
+  const joinRoomAgain = (roomId: string, playerId: string) => {
+    if (!socket) {
+      return;
+    }
+    socket.emit("joinRoomAgain", roomId, playerId)
+  }
+
   useEffect(() => {
     if (!socket) return
 
-    socket.on("roomCreated", (room) => {
+    socket.on("roomCreated", (room, player) => {
       setCurrentRoom(room)
+      localStorage.setItem("roomId", room.id);
+      localStorage.setItem("playerId", player.id);
       setError("")
     })
 
-    socket.on("roomJoined", (room) => {
+    socket.on("roomJoined", (room, player) => {
       setCurrentRoom(room)
+      localStorage.setItem("roomId", room.id);
+      localStorage.setItem("playerId", player.id);
       setError("")
     })
 
@@ -43,10 +54,11 @@ export function MultiplayerChessLobby() {
 
     socket.on("playerJoined", (player) => {
       if (currentRoom) {
-        setCurrentRoom({
+        const updatedRoom = {
           ...currentRoom,
           players: [...currentRoom.players, player],
-        })
+        };
+        setCurrentRoom(updatedRoom);
       }
     })
 
@@ -75,6 +87,12 @@ export function MultiplayerChessLobby() {
     }
   }, [socket, isConnected, currentRoom])
 
+  useEffect(() => {
+    if (localStorage.getItem("playerId") && localStorage.getItem("roomId")) {
+      joinRoomAgain(localStorage.getItem("roomId") || "", localStorage.getItem("playerId") || "");
+    }
+  }, [socket, isConnected]);
+
   const createRoom = () => {
     if (!socket || !playerName.trim() || !roomName.trim()) {
       setError("Please enter both player name and room name")
@@ -93,6 +111,8 @@ export function MultiplayerChessLobby() {
 
   const leaveRoom = () => {
     if (!socket) return
+    localStorage.removeItem("roomId");
+    localStorage.removeItem("playerId");
     socket.emit("leaveRoom")
     setCurrentRoom(null)
   }

@@ -513,7 +513,7 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      socket.emit("roomCreated", room)
+      socket.emit("roomCreated", room, player)
       console.log(`Room created: ${roomId} by ${playerName}`)
     })
 
@@ -553,10 +553,29 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      socket.emit("roomJoined", room)
+      socket.emit("roomJoined", room, player)
       socket.to(roomId).emit("playerJoined", player)
 
       console.log(`${playerName} joined room ${roomId} as ${availableColor}`)
+    })
+
+    socket.on("joinRoomAgain", (roomId, playerId) => {
+      const room = rooms.get(roomId)
+      if (!room) {
+        socket.emit("error", "Room not found")
+        return
+      }
+
+      if (!room.players.some(player => player.id = playerId)) {
+        socket.emit("error", "Player not found")
+      }
+
+      const player = room.players.find((player) => {
+        return player.id = playerId;
+      })
+      player.isConnected = true;
+
+      socket.emit("roomJoined", room, player)
     })
 
     socket.on("makeMove", (from, to) => {
@@ -686,7 +705,7 @@ app.prepare().then(() => {
             io.to(roomId).emit("playerDisconnected", socket.id)
 
             const connectedPlayers = room.players.filter((p) => p.isConnected)
-            if (connectedPlayers.length === 0) {
+            if (connectedPlayers.length === 0 && !room.isGameStarted) {
               rooms.delete(roomId)
               console.log(`Room ${roomId} deleted - no connected players`)
             }
