@@ -2,7 +2,6 @@ import type { GameState, PieceColor, Position } from "./chess"
 
 export interface Player {
   id: string
-  socketId: string
   name: string
   color: PieceColor
   isConnected: boolean

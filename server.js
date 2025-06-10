@@ -15,6 +15,12 @@ const rooms = new Map()
 const playerRooms = new Map()
 const PLAYER_ORDER = ["red", "blue", "yellow", "green"]
 
+// AI move timers
+const aiMoveTimers = new Map()
+
+// Store io instance globally
+let io
+
 // Initialize board function
 function initializeBoard() {
   const board = Array(14)
@@ -308,6 +314,105 @@ function getAvailableMoves(board, position) {
   })
 }
 
+// AI Functions
+function getAllLegalMovesForPlayer(board, color) {
+  const allMoves = []
+
+  for (let row = 0; row < 14; row++) {
+    for (let col = 0; col < 14; col++) {
+      const piece = board[row][col]
+      if (piece && piece.color === color) {
+        const moves = getAvailableMoves(board, { row, col })
+        moves.forEach((move) => {
+          allMoves.push({
+            from: { row, col },
+            to: move,
+          })
+        })
+      }
+    }
+  }
+
+  return allMoves
+}
+
+function makeRandomMove(room) {
+  const { board, currentPlayer } = room.gameState
+  const legalMoves = getAllLegalMovesForPlayer(board, currentPlayer)
+
+  if (legalMoves.length === 0) {
+    console.log(`No legal moves available for AI player ${currentPlayer}`)
+    return false
+  }
+
+  // Select a random move
+  const randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)]
+
+  // Execute the move
+  const success = executeMove(room, randomMove.from, randomMove.to)
+  if (success) {
+    console.log(
+      `AI ${currentPlayer} made move from (${randomMove.from.row},${randomMove.from.col}) to (${randomMove.to.row},${randomMove.to.col})`,
+    )
+    return true
+  }
+
+  return false
+}
+
+function scheduleAIMove(roomId, delay = 2000) {
+  // Clear any existing timer for this room
+  if (aiMoveTimers.has(roomId)) {
+    clearTimeout(aiMoveTimers.get(roomId))
+  }
+
+  const timer = setTimeout(() => {
+    const room = rooms.get(roomId)
+    if (!room || !room.isGameStarted || room.gameState.gameWinner) {
+      return
+    }
+
+    const currentPlayer = room.gameState.currentPlayer
+    const player = room.players.find((p) => p.color === currentPlayer)
+
+    // Check if current player is AI (no player or disconnected)
+    if (!player || !player.isConnected) {
+      if (makeRandomMove(room)) {
+        // Broadcast the updated game state
+        if (io) {
+          io.to(roomId).emit("gameStateUpdated", room.gameState)
+        }
+
+        // Schedule next AI move if needed
+        const nextPlayer = room.gameState.currentPlayer
+        const nextPlayerObj = room.players.find((p) => p.color === nextPlayer)
+        if (!nextPlayerObj || !nextPlayerObj.isConnected) {
+          scheduleAIMove(roomId)
+        }
+      }
+    }
+
+    aiMoveTimers.delete(roomId)
+  }, delay)
+
+  aiMoveTimers.set(roomId, timer)
+}
+
+function checkAndScheduleAIMove(roomId) {
+  const room = rooms.get(roomId)
+  if (!room || !room.isGameStarted || room.gameState.gameWinner) {
+    return
+  }
+
+  const currentPlayer = room.gameState.currentPlayer
+  const player = room.players.find((p) => p.color === currentPlayer)
+
+  // If current player is AI (no player or disconnected), schedule a move
+  if (!player || !player.isConnected) {
+    scheduleAIMove(roomId)
+  }
+}
+
 function generateRoomId() {
   return Math.random().toString(36).substring(2, 8).toUpperCase()
 }
@@ -463,6 +568,28 @@ function generatePlayerId() {
   return Math.random().toString(36).substring(2, 10).toUpperCase()
 }
 
+// Helper function to create public player info (without socketId)
+function createPublicPlayerInfo(player) {
+  return {
+    id: player.id,
+    name: player.name,
+    color: player.color,
+    isConnected: player.isConnected,
+  }
+}
+
+// Helper function to create public room info
+function createPublicRoomInfo(room) {
+  return {
+    id: room.id,
+    name: room.name,
+    players: room.players.map(createPublicPlayerInfo),
+    gameState: room.gameState,
+    isGameStarted: room.isGameStarted,
+    createdAt: room.createdAt,
+  }
+}
+
 app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
     try {
@@ -475,8 +602,8 @@ app.prepare().then(() => {
     }
   })
 
-  // Initialize Socket.IO server
-  const io = new Server(httpServer, {
+  // Initialize Socket.IO server and store globally
+  io = new Server(httpServer, {
     cors: {
       origin: "*",
       methods: ["GET", "POST"],
@@ -519,7 +646,10 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      socket.emit("roomCreated", room, player)
+      const publicRoom = createPublicRoomInfo(room)
+      const myPlayerInfo = createPublicPlayerInfo(player)
+
+      socket.emit("roomCreated", publicRoom, myPlayerInfo)
       console.log(`Room created: ${roomId} by ${playerName} (${playerId})`)
     })
 
@@ -561,8 +691,11 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      socket.emit("roomJoined", room, player)
-      socket.to(roomId).emit("playerJoined", player)
+      const publicRoom = createPublicRoomInfo(room)
+      const myPlayerInfo = createPublicPlayerInfo(player)
+
+      socket.emit("roomJoined", publicRoom, myPlayerInfo)
+      socket.to(roomId).emit("playerJoined", createPublicPlayerInfo(player))
 
       console.log(`${playerName} (${playerId}) joined room ${roomId} as ${availableColor}`)
     })
@@ -586,10 +719,16 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      socket.emit("roomJoined", room, player)
+      const publicRoom = createPublicRoomInfo(room)
+      const myPlayerInfo = createPublicPlayerInfo(player)
+
+      socket.emit("roomJoined", publicRoom, myPlayerInfo)
       socket.to(roomId).emit("playerReconnected", playerId)
 
       console.log(`${player.name} (${playerId}) reconnected to room ${roomId}`)
+
+      // Check if AI should make a move after reconnection
+      checkAndScheduleAIMove(roomId)
     })
 
     socket.on("makeMove", (from, to, playerId) => {
@@ -605,9 +744,9 @@ app.prepare().then(() => {
         return
       }
 
-      const player = room.players.find((p) => p.id === playerId)
+      const player = room.players.find((p) => p.id === playerId && p.socketId === socket.id)
       if (!player) {
-        socket.emit("error", "Player not found")
+        socket.emit("error", "Player not found or unauthorized")
         return
       }
 
@@ -621,6 +760,12 @@ app.prepare().then(() => {
         return
       }
 
+      // Clear any pending AI move timer
+      if (aiMoveTimers.has(roomId)) {
+        clearTimeout(aiMoveTimers.get(roomId))
+        aiMoveTimers.delete(roomId)
+      }
+
       // Validate and execute move
       const success = executeMove(room, from, to)
       if (success) {
@@ -628,6 +773,9 @@ app.prepare().then(() => {
           `Move executed: ${player.name} (${playerId}) moved from (${from.row},${from.col}) to (${to.row},${to.col})`,
         )
         io.to(roomId).emit("gameStateUpdated", room.gameState)
+
+        // Check if next player needs AI move
+        checkAndScheduleAIMove(roomId)
       } else {
         socket.emit("error", "Invalid move")
       }
@@ -640,14 +788,14 @@ app.prepare().then(() => {
       const room = rooms.get(roomId)
       if (!room) return
 
-      const player = room.players.find((p) => p.id === playerId)
+      const player = room.players.find((p) => p.id === playerId && p.socketId === socket.id)
       if (!player || room.players[0]?.id !== playerId) {
         socket.emit("error", "Only room creator can start the game")
         return
       }
 
-      if (room.players.length < 2) {
-        socket.emit("error", "Need at least 2 players to start")
+      if (room.players.length < 1) {
+        socket.emit("error", "Need at least 1 player to start")
         return
       }
 
@@ -656,6 +804,9 @@ app.prepare().then(() => {
       io.to(roomId).emit("gameStateUpdated", room.gameState)
 
       console.log(`Game started in room ${roomId} by ${player.name} (${playerId})`)
+
+      // Check if AI should make the first move
+      checkAndScheduleAIMove(roomId)
     })
 
     socket.on("resetGame", (playerId) => {
@@ -665,10 +816,16 @@ app.prepare().then(() => {
       const room = rooms.get(roomId)
       if (!room) return
 
-      const player = room.players.find((p) => p.id === playerId)
+      const player = room.players.find((p) => p.id === playerId && p.socketId === socket.id)
       if (!player || room.players[0]?.id !== playerId) {
         socket.emit("error", "Only room creator can reset the game")
         return
+      }
+
+      // Clear any AI timers
+      if (aiMoveTimers.has(roomId)) {
+        clearTimeout(aiMoveTimers.get(roomId))
+        aiMoveTimers.delete(roomId)
       }
 
       room.gameState = {
@@ -689,7 +846,9 @@ app.prepare().then(() => {
     })
 
     socket.on("getRooms", () => {
-      const publicRooms = Array.from(rooms.values()).filter((room) => !room.isGameStarted && room.players.length < 4)
+      const publicRooms = Array.from(rooms.values())
+        .filter((room) => !room.isGameStarted && room.players.length < 4)
+        .map(createPublicRoomInfo)
       socket.emit("roomsList", publicRooms)
     })
 
@@ -700,14 +859,33 @@ app.prepare().then(() => {
       const room = rooms.get(roomId)
       if (!room) return
 
+      const player = room.players.find((p) => p.id === playerId && p.socketId === socket.id)
+      if (!player) {
+        socket.emit("error", "Player not found or unauthorized")
+        return
+      }
+
+      // Check if the leaving player was on their turn
+      const wasCurrentPlayer = room.gameState.currentPlayer === player.color && room.isGameStarted
+
       room.players = room.players.filter((p) => p.id !== playerId)
       playerRooms.delete(socket.id)
 
       if (room.players.length === 0) {
+        // Clear AI timer if room is being deleted
+        if (aiMoveTimers.has(roomId)) {
+          clearTimeout(aiMoveTimers.get(roomId))
+          aiMoveTimers.delete(roomId)
+        }
         rooms.delete(roomId)
         console.log(`Room ${roomId} deleted - no players left`)
       } else {
         io.to(roomId).emit("playerLeft", playerId)
+
+        // If the leaving player was on their turn, schedule AI move
+        if (wasCurrentPlayer) {
+          checkAndScheduleAIMove(roomId)
+        }
       }
     })
 
@@ -719,11 +897,24 @@ app.prepare().then(() => {
         if (room) {
           const player = room.players.find((p) => p.socketId === socket.id)
           if (player) {
+            // Check if the disconnecting player was on their turn
+            const wasCurrentPlayer = room.gameState.currentPlayer === player.color && room.isGameStarted
+
             player.isConnected = false
             io.to(roomId).emit("playerDisconnected", player.id)
 
+            // If the disconnecting player was on their turn, schedule AI move
+            if (wasCurrentPlayer) {
+              checkAndScheduleAIMove(roomId)
+            }
+
             const connectedPlayers = room.players.filter((p) => p.isConnected)
             if (connectedPlayers.length === 0 && !room.isGameStarted) {
+              // Clear AI timer if room is being deleted
+              if (aiMoveTimers.has(roomId)) {
+                clearTimeout(aiMoveTimers.get(roomId))
+                aiMoveTimers.delete(roomId)
+              }
               rooms.delete(roomId)
               console.log(`Room ${roomId} deleted - no connected players`)
             }

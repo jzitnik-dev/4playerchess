@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import type { Socket } from "socket.io-client"
 import type { Room } from "@/types/multiplayer"
@@ -19,7 +21,7 @@ export function MultiplayerChessGame({ room: initialRoom, socket, onLeaveRoom }:
   const [gameState, setGameState] = useState<GameState>(initialRoom.gameState)
   const [selectedPiece, setSelectedPiece] = useState<Position | null>(null)
   const [availableMoves, setAvailableMoves] = useState<Position[]>([])
-  const [myPlayer, setMyPlayer] = useState(() => room.players.find((p) => p.socketId === socket?.id))
+  const [myPlayer, setMyPlayer] = useState(() => room.players.find((p) => p.id === localStorage.getItem("playerId")))
 
   useEffect(() => {
     if (!socket) return

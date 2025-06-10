@@ -111,11 +111,11 @@ export function MultiplayerChessLobby() {
 
   const leaveRoom = () => {
     if (!socket || !currentRoom) return
-    const myPlayer = currentRoom.players.find((p) => p.socketId === socket.id)
-    if (myPlayer) {
+    const myPlayerId = localStorage.getItem("playerId")
+    if (myPlayerId) {
       localStorage.removeItem("roomId")
       localStorage.removeItem("playerId")
-      socket.emit("leaveRoom", myPlayer.id)
+      socket.emit("leaveRoom", myPlayerId)
     }
     setCurrentRoom(null)
   }
