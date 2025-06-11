@@ -79,4 +79,5 @@
   grid-template-columns: repeat(14, 32px);
   grid-template-rows: repeat(14, 32px);
   gap: 0;
+  overflow-x: auto;
 }
