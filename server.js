@@ -205,8 +205,97 @@ function getKnightMoves(board, position, color, moves) {
   })
 }
 
-function getKingMoves(board, position, color, moves) {
+// Add this new function right before `getKingMoves`
+function addCastlingMoves(board, position, color, moves) {
   const { row, col } = position
+
+  // Check if king is in check (can't castle while in check)
+  if (isPositionUnderAttack(board, position, color)) {
+    return
+  }
+
+  // Determine rook positions based on player color
+  let kingSideRookCol, queenSideRookCol
+
+  switch (color) {
+    case "yellow":
+    case "red":
+      kingSideRookCol = col + 3
+      queenSideRookCol = col - 4
+      break
+    case "blue":
+    case "green":
+      // For vertical players, castling is along the same row
+      kingSideRookCol = col + 3
+      queenSideRookCol = col - 4
+      break
+  }
+
+  // King-side castling
+  if (isValidPosition({ row, col: kingSideRookCol })) {
+    const kingSideRook = board[row][kingSideRookCol]
+    if (kingSideRook && kingSideRook.type === "rook" && kingSideRook.color === color && !kingSideRook.hasMoved) {
+      // Check if squares between king and rook are empty
+      let canCastle = true
+      for (let c = col + 1; c < kingSideRookCol; c++) {
+        if (board[row][c] !== null) {
+          canCastle = false
+          break
+        }
+      }
+
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        for (let c = col; c <= col + 2; c++) {
+          if (isPositionUnderAttack(board, { row, col: c }, color)) {
+            canCastle = false
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        moves.push({ row, col: col + 2 })
+      }
+    }
+  }
+
+  // Queen-side castling
+  if (isValidPosition({ row, col: queenSideRookCol })) {
+    const queenSideRook = board[row][queenSideRookCol]
+    if (queenSideRook && queenSideRook.type === "rook" && queenSideRook.color === color && !queenSideRook.hasMoved) {
+      // Check if squares between king and rook are empty
+      let canCastle = true
+      for (let c = queenSideRookCol + 1; c < col; c++) {
+        if (board[row][c] !== null) {
+          canCastle = false
+          break
+        }
+      }
+
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        for (let c = col; c >= col - 2; c--) {
+          if (isPositionUnderAttack(board, { row, col: c }, color)) {
+            canCastle = false
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        moves.push({ row, col: col - 2 })
+      }
+    }
+  }
+}
+
+// Replace the existing `getKingMoves` function with this one:
+function getKingMoves(board, position, color, moves, includeCastling = false) {
+  const { row, col } = position
+  const piece = board[row][col]
+
+  // Regular king moves
   const kingMoves = [
     { dr: -1, dc: -1 },
     { dr: -1, dc: 0 },
@@ -227,9 +316,15 @@ function getKingMoves(board, position, color, moves) {
       }
     }
   })
+
+  // Castling moves (only when explicitly requested to avoid recursion)
+  if (includeCastling && piece && !piece.hasMoved) {
+    addCastlingMoves(board, position, color, moves)
+  }
 }
 
-function getAvailableMovesWithoutCheckValidation(board, position) {
+// Replace the existing `getAvailableMovesWithoutCheckValidation` function with this one:
+function getAvailableMovesWithoutCheckValidation(board, position, includeCastling = false) {
   const { row, col } = position
   const piece = board[row][col]
 
@@ -254,13 +349,14 @@ function getAvailableMovesWithoutCheckValidation(board, position) {
       getQueenMoves(board, position, piece.color, moves)
       break
     case "king":
-      getKingMoves(board, position, piece.color, moves)
+      getKingMoves(board, position, piece.color, moves, includeCastling)
       break
   }
 
   return moves
 }
 
+// Replace the existing `isPositionUnderAttack` function with this one:
 function isPositionUnderAttack(board, position, playerColor) {
   const opponents = ["yellow", "blue", "green", "red"].filter((color) => color !== playerColor)
 
@@ -268,7 +364,7 @@ function isPositionUnderAttack(board, position, playerColor) {
     for (let col = 0; col < 14; col++) {
       const piece = board[row][col]
       if (piece && opponents.includes(piece.color)) {
-        const moves = getAvailableMovesWithoutCheckValidation(board, { row, col })
+        const moves = getAvailableMovesWithoutCheckValidation(board, { row, col }, false)
         if (moves.some((move) => move.row === position.row && move.col === position.col)) {
           return true
         }
@@ -279,20 +375,9 @@ function isPositionUnderAttack(board, position, playerColor) {
   return false
 }
 
-function findKingPosition(board, color) {
-  for (let row = 0; row < 14; row++) {
-    for (let col = 0; col < 14; col++) {
-      const piece = board[row][col]
-      if (piece && piece.type === "king" && piece.color === color) {
-        return { row, col }
-      }
-    }
-  }
-  return null
-}
-
+// Replace the existing `getAvailableMoves` function with this one:
 function getAvailableMoves(board, position) {
-  const moves = getAvailableMovesWithoutCheckValidation(board, position)
+  const moves = getAvailableMovesWithoutCheckValidation(board, position, true) // Allow castling
   const { row, col } = position
   const piece = board[row][col]
 
@@ -302,12 +387,28 @@ function getAvailableMoves(board, position) {
   return moves.filter((move) => {
     // Create a copy of the board to simulate the move
     const newBoard = board.map((row) => [...row])
-    newBoard[move.row][move.col] = piece
-    newBoard[row][col] = null
 
-    // Find the king's position
+    // Handle castling move simulation
+    if (piece.type === "king" && Math.abs(move.col - col) === 2) {
+      // This is a castling move
+      const isKingSide = move.col > col
+      const rookCol = isKingSide ? col + 3 : col - 4
+      const rookNewCol = isKingSide ? col + 1 : col - 1
+
+      // Move king and rook
+      newBoard[move.row][move.col] = piece
+      newBoard[row][col] = null
+      newBoard[row][rookNewCol] = newBoard[row][rookCol]
+      newBoard[row][rookCol] = null
+    } else {
+      // Regular move
+      newBoard[move.row][move.col] = piece
+      newBoard[row][col] = null
+    }
+
+    // Find the king's position after the move
     const kingPosition = findKingPosition(newBoard, piece.color)
-    if (!kingPosition) return true
+    if (!kingPosition) return false
 
     // Check if the king would be in check after the move
     return !isPositionUnderAttack(newBoard, kingPosition, piece.color)
@@ -525,6 +626,7 @@ function executeMove(room, from, to) {
   movingPieceData.hasMoved = true
 
   if (movingPieceData.type === "king" && Math.abs(to.col - from.col) === 2) {
+    console.log("pepa")
     // Castling
     const isKingSide = to.col > from.col
     const rookCol = isKingSide ? from.col + 3 : from.col - 4
@@ -601,6 +703,19 @@ function createPublicRoomInfo(room) {
     isGameStarted: room.isGameStarted,
     createdAt: room.createdAt,
   }
+}
+
+// Helper function to find the king's position
+function findKingPosition(board, color) {
+  for (let row = 0; row < 14; row++) {
+    for (let col = 0; col < 14; col++) {
+      const piece = board[row][col]
+      if (piece && piece.type === "king" && piece.color === color) {
+        return { row, col }
+      }
+    }
+  }
+  return null // King not found (should not happen in a valid game state)
 }
 
 app.prepare().then(() => {
