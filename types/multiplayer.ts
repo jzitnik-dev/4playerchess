@@ -1,4 +1,4 @@
-import type { GameState, PieceColor, Position } from "./chess"
+import type { GameState, PieceColor, Position, Move } from "./chess"
 
 export interface Player {
   id: string
@@ -20,6 +20,7 @@ export interface ServerToClientEvents {
   roomCreated: (room: Room, me: Player) => void
   roomJoined: (room: Room, me: Player) => void
   roomLeft: (room: Room) => void
+  moveExecuted: (data: { move: Move; gameState: GameState }) => void
   gameStateUpdated: (gameState: GameState) => void
   playerJoined: (player: Player) => void
   playerLeft: (playerId: string) => void

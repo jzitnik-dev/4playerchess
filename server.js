@@ -342,48 +342,39 @@ function makeRandomMove(room) {
 
   if (legalMoves.length === 0) {
     console.log(`No legal moves available for AI player ${currentPlayer}`)
-    return false
+    return null
   }
 
-  // Select a random move
   const randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)]
+  const move = executeMove(room, randomMove.from, randomMove.to)
 
-  // Execute the move
-  const success = executeMove(room, randomMove.from, randomMove.to)
-  if (success) {
+  if (move) {
     console.log(
       `AI ${currentPlayer} made move from (${randomMove.from.row},${randomMove.from.col}) to (${randomMove.to.row},${randomMove.to.col})`,
     )
-    return true
+    return move
   }
-
-  return false
+  return null
 }
 
 function scheduleAIMove(roomId, delay = 2000) {
-  // Clear any existing timer for this room
   if (aiMoveTimers.has(roomId)) {
     clearTimeout(aiMoveTimers.get(roomId))
   }
 
   const timer = setTimeout(() => {
     const room = rooms.get(roomId)
-    if (!room || !room.isGameStarted || room.gameState.gameWinner) {
-      return
-    }
+    if (!room || !room.isGameStarted || room.gameState.gameWinner) return
 
     const currentPlayer = room.gameState.currentPlayer
     const player = room.players.find((p) => p.color === currentPlayer)
 
-    // Check if current player is AI (no player or disconnected)
     if (!player || !player.isConnected) {
-      if (makeRandomMove(room)) {
-        // Broadcast the updated game state
+      const move = makeRandomMove(room)
+      if (move) {
         if (io) {
-          io.to(roomId).emit("gameStateUpdated", room.gameState)
+          io.to(roomId).emit("moveExecuted", { move, gameState: room.gameState })
         }
-
-        // Schedule next AI move if needed
         const nextPlayer = room.gameState.currentPlayer
         const nextPlayerObj = room.players.find((p) => p.color === nextPlayer)
         if (!nextPlayerObj || !nextPlayerObj.isConnected) {
@@ -391,10 +382,8 @@ function scheduleAIMove(roomId, delay = 2000) {
         }
       }
     }
-
     aiMoveTimers.delete(roomId)
   }, delay)
-
   aiMoveTimers.set(roomId, timer)
 }
 
@@ -420,9 +409,16 @@ function generateRoomId() {
 function getNextPlayer(currentPlayer, eliminatedPlayers) {
   const currentIndex = PLAYER_ORDER.indexOf(currentPlayer)
   let nextIndex = (currentIndex + 1) % PLAYER_ORDER.length
+  let safetyBreak = PLAYER_ORDER.length
 
-  while (eliminatedPlayers.includes(PLAYER_ORDER[nextIndex])) {
+  while (eliminatedPlayers.includes(PLAYER_ORDER[nextIndex]) && safetyBreak > 0) {
     nextIndex = (nextIndex + 1) % PLAYER_ORDER.length
+    safetyBreak--
+  }
+  if (safetyBreak === 0) {
+    // All remaining players are eliminated, should mean game over
+    const activePlayers = PLAYER_ORDER.filter((p) => !eliminatedPlayers.includes(p))
+    return activePlayers.length > 0 ? activePlayers[0] : currentPlayer // Fallback
   }
 
   return PLAYER_ORDER[nextIndex]
@@ -440,33 +436,36 @@ function removeAllPiecesOfColor(board, color) {
 }
 
 function updateGameStatus(room) {
-  const { board } = room.gameState
+  const { board } = room.gameState // board here is already updated with the current move
   const playersInCheck = []
+  // Start with players already known to be eliminated
   const eliminatedPlayers = [...room.gameState.eliminatedPlayers]
 
-  PLAYER_ORDER.forEach((player) => {
-    if (eliminatedPlayers.includes(player)) return
+  PLAYER_ORDER.forEach((playerColor) => {
+    if (eliminatedPlayers.includes(playerColor)) return // Skip already eliminated players
 
-    const kingPosition = findKingPosition(board, player)
+    const kingPosition = findKingPosition(board, playerColor)
     if (!kingPosition) {
-      if (!eliminatedPlayers.includes(player)) {
-        eliminatedPlayers.push(player)
-        removeAllPiecesOfColor(board, player)
+      // King not on board (e.g., captured, though this logic is for checkmate)
+      if (!eliminatedPlayers.includes(playerColor)) {
+        eliminatedPlayers.push(playerColor)
+        // Pieces of this player should already be removed if king was captured leading to this.
+        // If king is missing due to other reasons (should not happen in standard rules), remove pieces.
+        removeAllPiecesOfColor(board, playerColor)
       }
       return
     }
 
-    const isInCheck = isPositionUnderAttack(board, kingPosition, player)
+    const isInCheck = isPositionUnderAttack(board, kingPosition, playerColor)
     if (isInCheck) {
-      playersInCheck.push(player)
+      playersInCheck.push(playerColor)
 
-      // Check for checkmate
       let hasLegalMoves = false
-      for (let row = 0; row < 14; row++) {
-        for (let col = 0; col < 14; col++) {
-          const piece = board[row][col]
-          if (piece && piece.color === player) {
-            const moves = getAvailableMoves(board, { row, col })
+      for (let r = 0; r < 14; r++) {
+        for (let c = 0; c < 14; c++) {
+          const piece = board[r][c]
+          if (piece && piece.color === playerColor) {
+            const moves = getAvailableMoves(board, { row: r, col: c })
             if (moves.length > 0) {
               hasLegalMoves = true
               break
@@ -476,92 +475,106 @@ function updateGameStatus(room) {
         if (hasLegalMoves) break
       }
 
-      if (!hasLegalMoves && !eliminatedPlayers.includes(player)) {
-        eliminatedPlayers.push(player)
-        removeAllPiecesOfColor(board, player)
+      if (!hasLegalMoves) {
+        // Checkmate
+        if (!eliminatedPlayers.includes(playerColor)) {
+          eliminatedPlayers.push(playerColor)
+          removeAllPiecesOfColor(board, playerColor) // Remove pieces of checkmated player
+        }
       }
     }
   })
 
   room.gameState.playersInCheck = playersInCheck
-  room.gameState.eliminatedPlayers = eliminatedPlayers
+  room.gameState.eliminatedPlayers = eliminatedPlayers // This is the updated list
 
-  // Determine winner
   const activePlayers = PLAYER_ORDER.filter((p) => !eliminatedPlayers.includes(p))
   room.gameState.gameWinner = activePlayers.length === 1 ? activePlayers[0] : null
 
-  // Get next player
   if (!room.gameState.gameWinner) {
     room.gameState.currentPlayer = getNextPlayer(room.gameState.currentPlayer, eliminatedPlayers)
+  } else {
+    // If there's a winner, current player might be the winner or null
+    room.gameState.currentPlayer = room.gameState.gameWinner
   }
 }
 
 function executeMove(room, from, to) {
-  const { board, currentPlayer } = room.gameState
-  const piece = board[from.row][from.col]
+  const { board: boardBeforeMove, currentPlayer } = room.gameState
+  const pieceBeingMoved = boardBeforeMove[from.row][from.col]
 
-  if (!piece || piece.color !== currentPlayer) {
-    return false
+  if (!pieceBeingMoved || pieceBeingMoved.color !== currentPlayer) {
+    return null
   }
 
-  // Get available moves and check if the move is valid
-  const availableMoves = getAvailableMoves(board, from)
+  const availableMoves = getAvailableMoves(boardBeforeMove, from)
   const isValidMove = availableMoves.some((move) => move.row === to.row && move.col === to.col)
 
   if (!isValidMove) {
-    return false
+    return null
   }
 
-  // Execute the move
-  const newBoard = board.map((r) => [...r])
-  const movingPiece = { ...newBoard[from.row][from.col] }
+  const newBoard = boardBeforeMove.map((r) => [...r])
+  const movingPieceData = { ...newBoard[from.row][from.col] } // Data of the piece that is moving
+  const capturedPieceOnSquare = newBoard[to.row][to.col] ? { ...newBoard[to.row][to.col] } : null
 
-  // Handle captured piece
-  const capturedPiece = newBoard[to.row][to.col]
-  if (capturedPiece) {
-    room.gameState.capturedPieces[currentPlayer] = [...room.gameState.capturedPieces[currentPlayer], capturedPiece]
+  if (capturedPieceOnSquare) {
+    room.gameState.capturedPieces[currentPlayer].push(capturedPieceOnSquare)
   }
 
-  movingPiece.hasMoved = true
+  movingPieceData.hasMoved = true
 
-  // Handle castling
-  if (movingPiece.type === "king" && Math.abs(to.col - from.col) === 2) {
+  if (movingPieceData.type === "king" && Math.abs(to.col - from.col) === 2) {
+    // Castling
     const isKingSide = to.col > from.col
     const rookCol = isKingSide ? from.col + 3 : from.col - 4
     const rookNewCol = isKingSide ? from.col + 1 : from.col - 1
-
     const rook = { ...newBoard[from.row][rookCol] }
     rook.hasMoved = true
     newBoard[from.row][rookNewCol] = rook
     newBoard[from.row][rookCol] = null
   }
 
-  // Handle pawn promotion
-  if (movingPiece.type === "pawn") {
+  if (movingPieceData.type === "pawn") {
+    // Pawn Promotion
     const isPromotion =
       (currentPlayer === "yellow" && to.row === 7) ||
       (currentPlayer === "red" && to.row === 6) ||
       (currentPlayer === "blue" && to.col === 7) ||
       (currentPlayer === "green" && to.col === 6)
-
     if (isPromotion) {
-      movingPiece.type = "queen"
+      movingPieceData.type = "queen"
     }
   }
 
-  // Apply the move
-  newBoard[to.row][to.col] = movingPiece
+  newBoard[to.row][to.col] = movingPieceData
   newBoard[from.row][from.col] = null
+  room.gameState.board = newBoard // Board updated with the single move
 
-  // Update game state
-  room.gameState.board = newBoard
-  room.gameState.selectedPiece = null
-  room.gameState.availableMoves = []
+  updateGameStatus(room) // This updates playersInCheck, eliminatedPlayers (and removes pieces), gameWinner, currentPlayer
 
-  // Check game status
-  updateGameStatus(room)
+  const player = room.players.find((p) => p.color === movingPieceData.color)
+  const playerName = player ? player.name : `AI ${movingPieceData.color}`
 
-  return true
+  if (!room.gameState.moveHistory) {
+    // Should be initialized
+    room.gameState.moveHistory = []
+  }
+
+  const move = {
+    from,
+    to,
+    piece: movingPieceData, // The piece that moved, with its state *before* this move (e.g. pawn before promotion)
+    capturedPiece: capturedPieceOnSquare, // The piece that was on the target square
+    playerColor: movingPieceData.color,
+    playerName,
+    moveNumber: room.gameState.moveHistory.length + 1,
+    timestamp: Date.now(),
+    eliminatedPlayersAfterMove: [...room.gameState.eliminatedPlayers], // Crucial: list of all eliminated players AFTER this move and its consequences
+  }
+
+  room.gameState.moveHistory.push(move)
+  return move
 }
 
 function generatePlayerId() {
@@ -584,7 +597,7 @@ function createPublicRoomInfo(room) {
     id: room.id,
     name: room.name,
     players: room.players.map(createPublicPlayerInfo),
-    gameState: room.gameState,
+    gameState: room.gameState, // This will include the full moveHistory
     isGameStarted: room.isGameStarted,
     createdAt: room.createdAt,
   }
@@ -637,6 +650,7 @@ app.prepare().then(() => {
           playersInCheck: [],
           eliminatedPlayers: [],
           gameWinner: null,
+          moveHistory: [],
         },
         isGameStarted: false,
         createdAt: new Date(),
@@ -719,7 +733,7 @@ app.prepare().then(() => {
       playerRooms.set(socket.id, roomId)
       socket.join(roomId)
 
-      const publicRoom = createPublicRoomInfo(room)
+      const publicRoom = createPublicRoomInfo(room) // This will send the full gameState including history
       const myPlayerInfo = createPublicPlayerInfo(player)
 
       socket.emit("roomJoined", publicRoom, myPlayerInfo)
@@ -733,48 +747,28 @@ app.prepare().then(() => {
 
     socket.on("makeMove", (from, to, playerId) => {
       const roomId = playerRooms.get(socket.id)
-      if (!roomId) {
-        socket.emit("error", "Not in a room")
-        return
-      }
-
+      if (!roomId) return
       const room = rooms.get(roomId)
-      if (!room || !room.isGameStarted) {
-        socket.emit("error", "Game not started")
-        return
-      }
-
+      if (!room || !room.isGameStarted) return
       const player = room.players.find((p) => p.id === playerId && p.socketId === socket.id)
-      if (!player) {
-        socket.emit("error", "Player not found or unauthorized")
-        return
+      if (
+        !player ||
+        player.color !== room.gameState.currentPlayer ||
+        room.gameState.eliminatedPlayers.includes(player.color)
+      ) {
+        return socket.emit("error", "Invalid move request")
       }
 
-      if (player.color !== room.gameState.currentPlayer) {
-        socket.emit("error", "Not your turn")
-        return
-      }
-
-      if (room.gameState.eliminatedPlayers.includes(player.color)) {
-        socket.emit("error", "You are eliminated")
-        return
-      }
-
-      // Clear any pending AI move timer
       if (aiMoveTimers.has(roomId)) {
         clearTimeout(aiMoveTimers.get(roomId))
         aiMoveTimers.delete(roomId)
       }
 
-      // Validate and execute move
-      const success = executeMove(room, from, to)
-      if (success) {
-        console.log(
-          `Move executed: ${player.name} (${playerId}) moved from (${from.row},${from.col}) to (${to.row},${to.col})`,
-        )
-        io.to(roomId).emit("gameStateUpdated", room.gameState)
-
-        // Check if next player needs AI move
+      const move = executeMove(room, from, to)
+      if (move) {
+        console.log(`Move executed: ${player.name} moved from (${from.row},${from.col}) to (${to.row},${to.col})`)
+        // gameState sent here includes the updated moveHistory and board after eliminations
+        io.to(roomId).emit("moveExecuted", { move, gameState: room.gameState })
         checkAndScheduleAIMove(roomId)
       } else {
         socket.emit("error", "Invalid move")
@@ -795,13 +789,14 @@ app.prepare().then(() => {
       }
 
       if (room.players.length < 1) {
+        // Changed from 2 to 1 for testing, can be 2 for real games
         socket.emit("error", "Need at least 1 player to start")
         return
       }
 
       room.isGameStarted = true
       io.to(roomId).emit("gameStarted")
-      io.to(roomId).emit("gameStateUpdated", room.gameState)
+      io.to(roomId).emit("gameStateUpdated", room.gameState) // Send initial state
 
       console.log(`Game started in room ${roomId} by ${player.name} (${playerId})`)
 
@@ -837,10 +832,12 @@ app.prepare().then(() => {
         playersInCheck: [],
         eliminatedPlayers: [],
         gameWinner: null,
+        moveHistory: [], // Reset history
       }
+      room.isGameStarted = false // Ensure game is marked as not started
 
-      io.to(roomId).emit("gameReset")
-      io.to(roomId).emit("gameStateUpdated", room.gameState)
+      io.to(roomId).emit("gameReset") // Signal client to reset UI components
+      io.to(roomId).emit("gameStateUpdated", room.gameState) // Send the fresh gameState
 
       console.log(`Game reset in room ${roomId} by ${player.name} (${playerId})`)
     })
