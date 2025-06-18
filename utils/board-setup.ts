@@ -22,7 +22,7 @@ export function initializeBoard(): (Piece | null)[][] {
 
 function setupYellowPieces(board: (Piece | null)[][]) {
   // Back rank (row 0)
-  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
+  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "king", "queen", "bishop", "knight", "rook"]
   for (let i = 0; i < 8; i++) {
     board[0][3 + i] = { type: backPieces[i], color: "yellow" }
   }
@@ -61,7 +61,7 @@ function setupRedPieces(board: (Piece | null)[][]) {
 
 function setupGreenPieces(board: (Piece | null)[][]) {
   // Back rank (col 13)
-  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
+  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "king", "queen", "bishop", "knight", "rook"]
   for (let i = 0; i < 8; i++) {
     board[3 + i][13] = { type: backPieces[i], color: "green" }
   }

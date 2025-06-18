@@ -27,16 +27,18 @@ function initializeBoard() {
     .fill(null)
     .map(() => Array(14).fill(null))
 
-  // Yellow pieces (top) - rows 0-1, cols 3-10
   const backPieces = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
+  const bluePieces = ["rook", "knight", "bishop", "king", "queen", "bishop", "knight", "rook"]
+
+  // Yellow pieces (top) - rows 0-1, cols 3-10
   for (let i = 0; i < 8; i++) {
-    board[0][3 + i] = { type: backPieces[i], color: "yellow" }
+    board[0][3 + i] = { type: bluePieces[i], color: "yellow" }
     board[1][3 + i] = { type: "pawn", color: "yellow" }
   }
 
   // Blue pieces (left) - rows 3-10, cols 0-1
   for (let i = 0; i < 8; i++) {
-    board[3 + i][0] = { type: backPieces[i], color: "blue" }
+    board[3 + i][0] = { type: bluePieces[i], color: "blue" }
     board[3 + i][1] = { type: "pawn", color: "blue" }
   }
 
@@ -209,84 +211,71 @@ function getKnightMoves(board, position, color, moves) {
 function addCastlingMoves(board, position, color, moves) {
   const { row, col } = position
 
-  // Check if king is in check (can't castle while in check)
-  if (isPositionUnderAttack(board, position, color)) {
-    return
-  }
+  // Can't castle while in check
+  if (isPositionUnderAttack(board, position, color)) return
 
-  // Determine rook positions based on player color
-  let kingSideRookCol, queenSideRookCol
+  let kingSideRookPos, queenSideRookPos
+  let kingPath, queenPath
+  let castlingTarget = { kingSide: null, queenSide: null }
 
   switch (color) {
-    case "yellow":
     case "red":
-      kingSideRookCol = col + 3
-      queenSideRookCol = col - 4
+    case "yellow":
+      kingSideRookPos = { row, col: col + 3 }
+      queenSideRookPos = { row, col: col - 4 }
+      kingPath = [ { row, col: col + 1 }, { row, col: col + 2 } ]
+      queenPath = [ { row, col: col - 1 }, { row, col: col - 2 } ]
+      castlingTarget.kingSide = { row, col: col + 2 }
+      castlingTarget.queenSide = { row, col: col - 2 }
       break
+
     case "blue":
-    case "green":
-      // For vertical players, castling is along the same row
-      kingSideRookCol = col + 3
-      queenSideRookCol = col - 4
+      kingSideRookPos = { row: row + 3, col }
+      queenSideRookPos = { row: row - 4, col }
+      kingPath = [ { row: row + 1, col }, { row: row + 2, col } ]
+      queenPath = [ { row: row - 1, col }, { row: row - 2, col } ]
+      castlingTarget.kingSide = { row: row + 2, col }
+      castlingTarget.queenSide = { row: row - 2, col }
       break
+
+    case "green":
+      kingSideRookPos = { row: row - 3, col }
+      queenSideRookPos = { row: row + 4, col }
+      kingPath = [ { row: row - 1, col }, { row: row - 2, col } ]
+      queenPath = [ { row: row + 1, col }, { row: row + 2, col } ]
+      castlingTarget.kingSide = { row: row - 2, col }
+      castlingTarget.queenSide = { row: row + 2, col }
+      break
+  }
+
+  function isPathClear(path) {
+    for (const pos of path) {
+      if (!isValidPosition(pos) || board[pos.row][pos.col] !== null) return false
+      if (isPositionUnderAttack(board, pos, color)) return false
+    }
+    return true
   }
 
   // King-side castling
-  if (isValidPosition({ row, col: kingSideRookCol })) {
-    const kingSideRook = board[row][kingSideRookCol]
-    if (kingSideRook && kingSideRook.type === "rook" && kingSideRook.color === color && !kingSideRook.hasMoved) {
-      // Check if squares between king and rook are empty
-      let canCastle = true
-      for (let c = col + 1; c < kingSideRookCol; c++) {
-        if (board[row][c] !== null) {
-          canCastle = false
-          break
-        }
-      }
-
-      // Check if king passes through or ends up in check
-      if (canCastle) {
-        for (let c = col; c <= col + 2; c++) {
-          if (isPositionUnderAttack(board, { row, col: c }, color)) {
-            canCastle = false
-            break
-          }
-        }
-      }
-
-      if (canCastle) {
-        moves.push({ row, col: col + 2 })
-      }
-    }
+  if (
+    isValidPosition(kingSideRookPos) &&
+    board[kingSideRookPos.row][kingSideRookPos.col]?.type === "rook" &&
+    board[kingSideRookPos.row][kingSideRookPos.col]?.color === color &&
+    !board[kingSideRookPos.row][kingSideRookPos.col]?.hasMoved &&
+    isPathClear(kingPath)
+  ) {
+    moves.push(castlingTarget.kingSide)
   }
 
   // Queen-side castling
-  if (isValidPosition({ row, col: queenSideRookCol })) {
-    const queenSideRook = board[row][queenSideRookCol]
-    if (queenSideRook && queenSideRook.type === "rook" && queenSideRook.color === color && !queenSideRook.hasMoved) {
-      // Check if squares between king and rook are empty
-      let canCastle = true
-      for (let c = queenSideRookCol + 1; c < col; c++) {
-        if (board[row][c] !== null) {
-          canCastle = false
-          break
-        }
-      }
-
-      // Check if king passes through or ends up in check
-      if (canCastle) {
-        for (let c = col; c >= col - 2; c--) {
-          if (isPositionUnderAttack(board, { row, col: c }, color)) {
-            canCastle = false
-            break
-          }
-        }
-      }
-
-      if (canCastle) {
-        moves.push({ row, col: col - 2 })
-      }
-    }
+  if (
+    isValidPosition(queenSideRookPos) &&
+    board[queenSideRookPos.row][queenSideRookPos.col]?.type === "rook" &&
+    board[queenSideRookPos.row][queenSideRookPos.col]?.color === color &&
+    !board[queenSideRookPos.row][queenSideRookPos.col]?.hasMoved &&
+    isPathClear(queenPath)
+  ) {
+    moves.push(castlingTarget.queenSide)
   }
 }
 
@@ -625,16 +614,39 @@ function executeMove(room, from, to) {
 
   movingPieceData.hasMoved = true
 
-  if (movingPieceData.type === "king" && Math.abs(to.col - from.col) === 2) {
-    console.log("pepa")
-    // Castling
-    const isKingSide = to.col > from.col
-    const rookCol = isKingSide ? from.col + 3 : from.col - 4
-    const rookNewCol = isKingSide ? from.col + 1 : from.col - 1
-    const rook = { ...newBoard[from.row][rookCol] }
-    rook.hasMoved = true
-    newBoard[from.row][rookNewCol] = rook
-    newBoard[from.row][rookCol] = null
+  const dx = Math.abs(to.col - from.col);
+  const dy = Math.abs(to.row - from.row);
+
+  if (pieceBeingMoved.type === "king" && (Math.abs(dx) === 2 ^ Math.abs(dy) === 2)) {
+    switch (pieceBeingMoved.color) {
+      case "red": {
+        if (dx == -2) {
+
+        }
+        break;
+      }
+      case "yellow": {
+        const rookFromCol = dx > 0 ? from.col + 3 : from.col - 4
+        const rookToCol = dx > 0 ? from.col + 1 : from.col - 1
+        boardBeforeMove[from.row][rookToCol] = boardBeforeMove[from.row][rookFromCol]
+        boardBeforeMove[from.row][rookFromCol] = null
+        break
+      }
+      case "blue": {
+        const rookFromRow = dy > 0 ? from.row + 3 : from.row - 4
+        const rookToRow = dy > 0 ? from.row + 1 : from.row - 1
+        boardBeforeMove[rookToRow][from.col] = boardBeforeMove[rookFromRow][from.col]
+        boardBeforeMove[rookFromRow][from.col] = null
+        break
+      }
+      case "green": {
+        const rookFromRow = dy < 0 ? from.row - 3 : from.row + 4
+        const rookToRow = dy < 0 ? from.row - 1 : from.row + 1
+        boardBeforeMove[rookToRow][from.col] = boardBeforeMove[rookFromRow][from.col]
+        boardBeforeMove[rookFromRow][from.col] = null
+        break
+      }
+    }
   }
 
   if (movingPieceData.type === "pawn") {
