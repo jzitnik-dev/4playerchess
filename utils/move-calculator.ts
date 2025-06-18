@@ -1,6 +1,8 @@
 import type { Position, Piece, PieceColor } from "@/types/chess"
 import { isPositionUnderAttack, findKingPosition } from "./game-logic"
 
+type Move = Position & { isCastling?: boolean }
+
 export function getAvailableMoves(board: (Piece | null)[][], position: Position): Position[] {
   const moves = getAvailableMovesWithoutCheckValidation(board, position, true) // Allow castling
   const { row, col } = position
@@ -9,22 +11,56 @@ export function getAvailableMoves(board: (Piece | null)[][], position: Position)
   if (!piece) return []
 
   // Filter out moves that would put or leave the king in check
-  return moves.filter((move) => {
+  return (moves as Move[]).filter((move) => {
     // Create a copy of the board to simulate the move
     const newBoard = board.map((row) => [...row])
+    const movingPiece = { ...piece }
 
     // Handle castling move simulation
-    if (piece.type === "king" && Math.abs(move.col - col) === 2) {
+    if (piece.type === "king" && (Math.abs(move.row - row) === 2 || Math.abs(move.col - col) === 2) && move.isCastling) {
       // This is a castling move
-      const isKingSide = move.col > col
-      const rookCol = isKingSide ? col + 3 : col - 4
-      const rookNewCol = isKingSide ? col + 1 : col - 1
+      const rowDelta = move.row - row
+      const colDelta = move.col - col
+
+      const direction = {
+        row: Math.sign(rowDelta),
+        col: Math.sign(colDelta)
+      }
+
+      let rookRow = row
+      let rookCol = col
+      for (let i = 1; i <= 4; i++) {
+        const testRow = row + i * direction.row
+        const testCol = col + i * direction.col
+
+        if (!isValidPosition({ row: testRow, col: testCol })) break
+
+        const maybeRook = newBoard[testRow][testCol]
+        if (maybeRook && maybeRook.type === "rook" && maybeRook.color === movingPiece.color) {
+          rookRow = testRow
+          rookCol = testCol
+          break
+        }
+      }
+
+      if (!isPathClear(newBoard, { row, col }, { row: rookRow, col: rookCol })) {
+        return false // Path blocked, castling not allowed
+      }
+
+      const rookNewRow = row + direction.row
+      const rookNewCol = col + direction.col
 
       // Move king and rook
-      newBoard[move.row][move.col] = piece
+      newBoard[move.row][move.col] = movingPiece
       newBoard[row][col] = null
-      newBoard[row][rookNewCol] = newBoard[row][rookCol]
-      newBoard[row][rookCol] = null
+
+      const rook = newBoard[rookRow][rookCol]
+      if (!rook) {
+        return false
+      }
+      newBoard[rookNewRow][rookNewCol] = rook
+      newBoard[rookRow][rookCol] = null
+
     } else {
       // Regular move
       newBoard[move.row][move.col] = piece
@@ -74,6 +110,23 @@ export function getAvailableMovesWithoutCheckValidation(
   }
 
   return moves
+}
+
+function isPathClear(board: (Piece | null)[][], start: Position, end: Position): boolean {
+  const rowStep = Math.sign(end.row - start.row)
+  const colStep = Math.sign(end.col - start.col)
+
+  let currentRow = start.row + rowStep
+  let currentCol = start.col + colStep
+
+  while (currentRow !== end.row || currentCol !== end.col) {
+    if (board[currentRow][currentCol] !== null) {
+      return false
+    }
+    currentRow += rowStep
+    currentCol += colStep
+  }
+  return true
 }
 
 function getPawnMoves(board: (Piece | null)[][], position: Position, color: PieceColor, moves: Position[]) {
@@ -235,81 +288,143 @@ function getKingMoves(
 function addCastlingMoves(board: (Piece | null)[][], position: Position, color: PieceColor, moves: Position[]) {
   const { row, col } = position
 
-  // King cannot castle while in check
+  // Check if king is in check (can't castle while in check)
   if (isPositionUnderAttack(board, position, color)) return
 
-  let kingSideRookPos: Position
-  let queenSideRookPos: Position
-  let pathToCheck: Position[] = []
-  let castlingTarget: { kingSide: Position; queenSide: Position }
-
-  switch (color) {
-    case "red":
-    case "yellow":
-      // Horizontal castling
-      kingSideRookPos = { row, col: col + 3 }
-      queenSideRookPos = { row, col: col - 4 }
-      castlingTarget = {
-        kingSide: { row, col: col + 2 },
-        queenSide: { row, col: col - 2 },
-      }
-      break
-    case "blue":
-      // Vertical castling
-      kingSideRookPos = { row: row + 3, col }
-      queenSideRookPos = { row: row - 4, col }
-      castlingTarget = {
-        kingSide: { row: row + 2, col },
-        queenSide: { row: row - 2, col },
-      }
-      break
-    case "green":
-      // Vertical castling (opposite direction)
-      kingSideRookPos = { row: row - 3, col }
-      queenSideRookPos = { row: row + 4, col }
-      castlingTarget = {
-        kingSide: { row: row - 2, col },
-        queenSide: { row: row + 2, col },
-      }
-      break
+  // Determine rook positions based on player color
+  const rookOffsets = {
+    yellow: { kingSide: { row: 0, col: -3 }, queenSide: { row: 0, col: 4 } },
+    red: { kingSide: { row: 0, col: 3 }, queenSide: { row: 0, col: -4 } },
+    blue: { kingSide: { row: 3, col: 0 }, queenSide: { row: -4, col: 0 } },
+    green: { kingSide: { row: -3, col: 0 }, queenSide: { row: 4, col: 0 } }
   }
 
-  // Helper to check castling path
-  const canCastle = (rookPos: Position, targetPos: Position, path: Position[]) => {
-    const rook = board[rookPos.row][rookPos.col]
-    if (!rook || rook.type !== "rook" || rook.color !== color || rook.hasMoved) return false
+  const rookOffset = rookOffsets[color]
 
-    // Check path clear
-    for (const pos of path) {
-      if (board[pos.row][pos.col]) return false
-      if (isPositionUnderAttack(board, pos, color)) return false
+  const kingSideRookRow = row + rookOffset.kingSide.row
+  const kingSideRookCol = col + rookOffset.kingSide.col
+  const queenSideRookRow = row + rookOffset.queenSide.row
+  const queenSideRookCol = col + rookOffset.queenSide.col
+
+  // King-side castling
+  if (isValidPosition({ row: kingSideRookRow, col: kingSideRookCol })) {
+    const kingSideRook = board[kingSideRookRow][kingSideRookCol]
+
+    if (kingSideRook && kingSideRook.type === "rook" && kingSideRook.color === color && !kingSideRook.hasMoved) {
+      // Check if squares between king and rook are empty
+      let canCastle = true
+
+      if (kingSideRookRow === row) {
+        const step = kingSideRookCol > col ? 1 : -1
+        for (let c = col + step; c < kingSideRookCol; c += step) {
+          if (board[row][c] !== null) {
+            canCastle = false
+            break
+          }
+        }
+      } else if (kingSideRookCol === col) {
+        const step = kingSideRookRow > row ? 1 : -1
+        for (let r = row + step; r !== kingSideRookRow; r += step) {
+          if (board[r][col] !== null) {
+            canCastle = false
+            break
+          }
+        }
+      }
+
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        const rowDelta = Math.sign(kingSideRookRow - row)
+        const colDelta = Math.sign(kingSideRookCol - col)
+
+        for (let i = 0; i <= 2; i++) {
+          const checkRow = row + i * rowDelta
+          const checkCol = col + i * colDelta
+
+          if (
+            !isValidPosition({ row: checkRow, col: checkCol }) ||
+            isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
+          ) {
+            canCastle = false
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        const rowDelta = Math.sign(kingSideRookRow - row)
+        const colDelta = Math.sign(kingSideRookCol - col)
+
+        const castleMove: Move = {
+          row: row + 2 * rowDelta,
+          col: col + 2 * colDelta,
+          isCastling: true
+        }
+
+        moves.push(castleMove)
+      }
     }
 
     return true
   }
 
-  // Check king-side castling
-  const kingSidePath =
-    color === "red" || color === "yellow"
-      ? [ { row, col: col + 1 }, { row, col: col + 2 } ]
-      : color === "blue"
-        ? [ { row: row + 1, col }, { row: row + 2, col } ]
-        : [ { row: row - 1, col }, { row: row - 2, col } ]
+  // Queen-side castling
+  if (isValidPosition({ row: queenSideRookRow, col: queenSideRookCol })) {
+    const queenSideRook = board[queenSideRookRow][queenSideRookCol]
+    if (queenSideRook && queenSideRook.type === "rook" && queenSideRook.color === color && !queenSideRook.hasMoved) {
+      // Check if squares between king and rook are empty
+      let canCastle = true
 
-  if (canCastle(kingSideRookPos, castlingTarget.kingSide, kingSidePath)) {
-    moves.push(castlingTarget.kingSide)
-  }
+      if (queenSideRookRow === row) {
+        const step = queenSideRookCol > col ? 1 : -1
+        for (let c = col + step; c < queenSideRookCol; c += step) {
+          if (board[row][c] !== null) {
+            canCastle = false
+            break
+          }
+        }
+      } else if (queenSideRookCol === col) {
+        const step = queenSideRookRow > row ? 1 : -1
+        for (let r = row + step; r !== queenSideRookRow; r += step) {
+          if (board[r][col] !== null) {
+            canCastle = false
+            break
+          }
+        }
+      }
 
-  // Check queen-side castling
-  const queenSidePath =
-    color === "red" || color === "yellow"
-      ? [ { row, col: col - 1 }, { row, col: col - 2 } ]
-      : color === "blue"
-        ? [ { row: row - 1, col }, { row: row - 2, col } ]
-        : [ { row: row + 1, col }, { row: row + 2, col } ]
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        const rowDelta = Math.sign(queenSideRookRow - row)
+        const colDelta = Math.sign(queenSideRookCol - col)
 
-  if (canCastle(queenSideRookPos, castlingTarget.queenSide, queenSidePath)) {
-    moves.push(castlingTarget.queenSide)
+        for (let i = 0; i <= 2; i++) {
+          const checkRow = row + i * rowDelta
+          const checkCol = col + i * colDelta
+
+          if (
+            !isValidPosition({ row: checkRow, col: checkCol }) ||
+            isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
+          ) {
+            canCastle = false
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        const rowDelta = Math.sign(queenSideRookRow - row)
+        const colDelta = Math.sign(queenSideRookCol - col)
+      
+        const castleMove: Move = {
+          row: row + 2 * rowDelta,
+          col: col + 2 * colDelta,
+          isCastling: true
+        }
+
+        moves.push(castleMove)
+      }
+    }
   }
 }
 
