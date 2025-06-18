@@ -210,13 +210,9 @@ function getKnightMoves(board, position, color, moves) {
 // Add this new function right before `getKingMoves`
 function addCastlingMoves(board, position, color, moves) {
   const { row, col } = position
-  console.log(`[${color}] Checking castling availability from position [${row};${col}]`);
 
   // Check if king is in check (can't castle while in check)
-  if (isPositionUnderAttack(board, position, color)) {
-    console.log(`[${color}] King is under attack — castling blocked.`);
-    return
-  }
+  if (isPositionUnderAttack(board, position, color)) return
 
   // Determine rook positions based on player color
   const rookOffsets = {
@@ -237,7 +233,6 @@ function addCastlingMoves(board, position, color, moves) {
   // King-side castling
   if (isValidPosition({ row: kingSideRookRow, col: kingSideRookCol })) {
     const rook = board[kingSideRookRow][kingSideRookCol]
-    console.log(`[${color}] King-side rook at [${kingSideRookRow};${kingSideRookCol}] is`, rook);
 
     if (rook && rook.type === "rook" && rook.color === color && !rook.hasMoved) {
       let canCastle = true
@@ -249,7 +244,6 @@ function addCastlingMoves(board, position, color, moves) {
         for (let c = col + step; c !== kingSideRookCol; c += step) {
           if (board[row][c] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
             break
           }
         }
@@ -259,7 +253,6 @@ function addCastlingMoves(board, position, color, moves) {
         for (let r = row + step; r !== kingSideRookRow; r += step) {
           if (board[r][col] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
             break
           }
         }
@@ -279,14 +272,12 @@ function addCastlingMoves(board, position, color, moves) {
             isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
           ) {
             canCastle = false
-            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
             break
           }
         }
       }
 
       if (canCastle) {
-        console.log(color + " - no check if king passes, castle continues!")
         const rowDelta = Math.sign(kingSideRookRow - row)
         const colDelta = Math.sign(kingSideRookCol - col)
       
@@ -296,8 +287,6 @@ function addCastlingMoves(board, position, color, moves) {
           isCastling: true
         }
 
-        console.log(`[${color}] ✅ King-side castling allowed: ${JSON.stringify(castleMove)}`);
-      
         moves.push(castleMove)
       }      
     }
@@ -306,7 +295,6 @@ function addCastlingMoves(board, position, color, moves) {
   // Queen-side castling
   if (isValidPosition({ row: queenSideRookRow, col: queenSideRookCol })) {
     const rook = board[queenSideRookRow][queenSideRookCol]
-    console.log(`[${color}] Queen-side rook at [${queenSideRookRow};${queenSideRookCol}] is`, rook);
 
     if (rook && rook.type === "rook" && rook.color === color && !rook.hasMoved) {
       // Check if squares between king and rook are empty
@@ -317,7 +305,6 @@ function addCastlingMoves(board, position, color, moves) {
         for (let c = col + step; c !== queenSideRookCol; c += step) {
           if (board[row][c] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
             break
           }
         }
@@ -327,7 +314,6 @@ function addCastlingMoves(board, position, color, moves) {
         for (let r = row + step; r !== queenSideRookRow; r += step) {
           if (board[r][col] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
             break
           }
         }
@@ -347,7 +333,6 @@ function addCastlingMoves(board, position, color, moves) {
             isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
           ) {
             canCastle = false
-            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
             break
           }
         }
@@ -363,7 +348,6 @@ function addCastlingMoves(board, position, color, moves) {
           isCastling: true
         }
       
-        console.log(`[${color}] ✅ Queen-side castling allowed: ${JSON.stringify(castleMove)}`);
         moves.push(castleMove)
       }
     }
@@ -485,8 +469,6 @@ function getAvailableMoves(board, position) {
 
     // Handle castling move simulation
     if (piece.type === "king" && (Math.abs(move.col - col) === 2 || Math.abs(move.row - row) === 2) && move.isCastling) {
-      console.log(`[${piece.color}] ⏳ Castling move initiated from (${row}, ${col}) to (${move.row}, ${move.col})`)
-      
       // This is a castling move
       const rowDelta = move.row - row
       const colDelta = move.col - col
@@ -498,56 +480,35 @@ function getAvailableMoves(board, position) {
 
       let rookRow = row
       let rookCol = col
-      let foundRook = false
 
       for (let i = 1; i <= 4; i++) {
         const testRow = row + i * direction.row
         const testCol = col + i * direction.col
-        if (!isValidPosition({ row: testRow, col: testCol })) {
-          console.log(`[${piece.color}] ❌ Invalid position while searching for rook at (${testRow}, ${testCol})`)
-          break
-        }
+        if (!isValidPosition({ row: testRow, col: testCol })) break
 
         const maybeRook = board[testRow][testCol]
         if (maybeRook && maybeRook.type === "rook" && maybeRook.color === piece.color) {
           rookRow = testRow
           rookCol = testCol
-          foundRook = true
-          console.log(`[${piece.color}] ✅ Rook found at (${rookRow}, ${rookCol})`)
           break
         }
       }
 
-      if(!foundRook) {
-        console.log(`[${piece.color}] ❌ No rook found in castling direction`)
-        return false
-      }
-
       if (!isPathClear(newBoard, { row, col }, { row: rookRow, col: rookCol })) {
-        console.log(`[${piece.color}] ❌ Path is blocked between king and rook`)
         return false; // block castling move because pieces in between
       }
 
       const rookNewRow = row + direction.row
       const rookNewCol = col + direction.col
 
-      console.log(`[${piece.color}] 🔁 Moving king to (${move.row}, ${move.col})`)
-      console.log(`[${piece.color}] 🔁 Moving rook from (${rookRow}, ${rookCol}) to (${rookNewRow}, ${rookNewCol})`)
-
       // Move king and rook
       newBoard[move.row][move.col] = piece
       newBoard[row][col] = null
       const rook = newBoard[rookRow][rookCol]
-      if (!rook) {
-        console.warn(`[${piece.color}] ❌ No rook found at expected position (${rookRow}, ${rookCol}) when moving`)
-        return false
-      }
+      if (!rook) return false
+
       newBoard[rookNewRow][rookNewCol] = rook
       newBoard[rookRow][rookCol] = null
-
-      console.log(`[${piece.color}] 🧩 Final board state (simplified):`)
-      console.log(`King at (${move.row}, ${move.col}):`, newBoard[move.row][move.col])
-      console.log(`Rook at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
     } else {
       // Regular move
       newBoard[move.row][move.col] = piece
@@ -776,8 +737,6 @@ function executeMove(room, from, to) {
   if (movingPieceData.type === "king" && (Math.abs(to.col - from.col) === 2 || Math.abs(to.row - from.row) === 2) && to.isCastling) {
     console.log("pepa")
 
-    console.log(`[${movingPieceData.color}] ⏳ Castling move initiated from (${from.row}, ${from.col}) to (${to.row}, ${to.col})`)
-
     const rowDelta = to.row - from.row
     const colDelta = to.col - from.col
 
@@ -793,28 +752,17 @@ function executeMove(room, from, to) {
     for (let i = 1; i <= 4; i++) {
       const testRow = from.row + i * direction.row
       const testCol = from.col + i * direction.col
-      if (!isValidPosition({ row: testRow, col: testCol })) {
-        console.log(`[${movingPieceData.color}] ❌ Invalid position while searching for rook at (${testRow}, ${testCol})`)
-        break
-      }
+      if (!isValidPosition({ row: testRow, col: testCol })) break
   
       const maybeRook = newBoard[testRow][testCol]
       if (maybeRook && maybeRook.type === "rook" && maybeRook.color === movingPieceData.color) {
         rookRow = testRow
         rookCol = testCol
-        foundRook = true
-        console.log(`[${movingPieceData.color}] ✅ Rook found at (${rookRow}, ${rookCol})`)
         break
       }
     }
 
-    if (!foundRook) {
-      console.log(`[${movingPieceData.color}] ❌ No rook found in castling direction`)
-      return null
-    }
-  
     if (!isPathClear(newBoard, { row: from.row, col: from.col }, { row: rookRow, col: rookCol })) {
-      console.log(`[${movingPieceData.color}] ❌ Path is blocked between king and rook`)
       return null
     }
 
@@ -827,12 +775,6 @@ function executeMove(room, from, to) {
     newBoard[from.row][from.col] = null
     newBoard[rookNewRow][rookNewCol] = movingRook // Move rook
     newBoard[rookRow][rookCol] = null
-
-    console.log(`[${movingPieceData.color}] 🔁 Moving king to (${to.row}, ${to.col})`)
-    console.log(`[${movingPieceData.color}] 🔁 Moving rook from (${rookRow}, ${rookCol}) to (${rookNewRow}, ${rookNewCol})`)
-    console.log(`[${movingPieceData.color}] 🧩 Final board state (simplified):`)
-    console.log(`King at (${to.row}, ${to.col}):`, newBoard[to.row][to.col])
-    console.log(`Rook at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
 
     // Apply final state + log move
     room.gameState.board = newBoard

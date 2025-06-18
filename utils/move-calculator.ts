@@ -56,15 +56,11 @@ export function getAvailableMoves(board: (Piece | null)[][], position: Position)
 
       const rook = newBoard[rookRow][rookCol]
       if (!rook) {
-        console.warn(`[${movingPiece.color}] ❌ No rook found at (${rookRow}, ${rookCol}) during castling`)
         return false
       }
       newBoard[rookNewRow][rookNewCol] = rook
       newBoard[rookRow][rookCol] = null
 
-      console.log(`[${movingPiece.color}] 🧩 Final board state (simplified):`)
-      console.log(`King at (${move.row}, ${move.col}):`, newBoard[move.row][move.col])
-      console.log(`Rook at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
     } else {
       // Regular move
       newBoard[move.row][move.col] = piece
@@ -291,13 +287,9 @@ function getKingMoves(
 
 function addCastlingMoves(board: (Piece | null)[][], position: Position, color: PieceColor, moves: Position[]) {
   const { row, col } = position
-  console.log(`[${color}] Checking castling availability from position [${row};${col}]`);
 
   // Check if king is in check (can't castle while in check)
-  if (isPositionUnderAttack(board, position, color)) {
-    console.log(`[${color}] King is under attack — castling blocked.`);
-    return
-  }
+  if (isPositionUnderAttack(board, position, color)) return
 
   // Determine rook positions based on player color
   const rookOffsets = {
@@ -317,7 +309,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
   // King-side castling
   if (isValidPosition({ row: kingSideRookRow, col: kingSideRookCol })) {
     const kingSideRook = board[kingSideRookRow][kingSideRookCol]
-    console.log(`[${color}] King-side rook at [${kingSideRookRow};${kingSideRookCol}] is`, kingSideRook);
 
     if (kingSideRook && kingSideRook.type === "rook" && kingSideRook.color === color && !kingSideRook.hasMoved) {
       // Check if squares between king and rook are empty
@@ -328,7 +319,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
         for (let c = col + step; c < kingSideRookCol; c += step) {
           if (board[row][c] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
             break
           }
         }
@@ -337,7 +327,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
         for (let r = row + step; r !== kingSideRookRow; r += step) {
           if (board[r][col] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
             break
           }
         }
@@ -357,14 +346,12 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
             isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
           ) {
             canCastle = false
-            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
             break
           }
         }
       }
 
       if (canCastle) {
-        console.log(`${color} - no check if king passes, castle continues!`)
         const rowDelta = Math.sign(kingSideRookRow - row)
         const colDelta = Math.sign(kingSideRookCol - col)
 
@@ -373,8 +360,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
           col: col + 2 * colDelta,
           isCastling: true
         }
-
-        console.log(`[${color}] ✅ King-side castling allowed: ${JSON.stringify(castleMove)}`);
 
         moves.push(castleMove)
       }
@@ -395,7 +380,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
         for (let c = col + step; c < queenSideRookCol; c += step) {
           if (board[row][c] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
             break
           }
         }
@@ -404,7 +388,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
         for (let r = row + step; r !== queenSideRookRow; r += step) {
           if (board[r][col] !== null) {
             canCastle = false
-            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
             break
           }
         }
@@ -424,14 +407,12 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
             isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
           ) {
             canCastle = false
-            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
             break
           }
         }
       }
 
       if (canCastle) {
-        console.log(`${color} - no check if king passes, castle continues!`)
         const rowDelta = Math.sign(queenSideRookRow - row)
         const colDelta = Math.sign(queenSideRookCol - col)
       
@@ -441,7 +422,6 @@ function addCastlingMoves(board: (Piece | null)[][], position: Position, color: 
           isCastling: true
         }
 
-        console.log(`[${color}] ✅ Queen-side castling allowed: ${JSON.stringify(castleMove)}`);
         moves.push(castleMove)
       }
     }
