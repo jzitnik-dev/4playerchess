@@ -32,7 +32,7 @@ function initializeBoard() {
 
   // Yellow pieces (top) - rows 0-1, cols 3-10
   for (let i = 0; i < 8; i++) {
-    board[0][3 + i] = { type: bluePieces[i], color: "yellow" }
+    board[0][10 - i] = { type: backPieces[i], color: "yellow" }
     board[1][3 + i] = { type: "pawn", color: "yellow" }
   }
 
@@ -50,7 +50,7 @@ function initializeBoard() {
 
   // Green pieces (right) - rows 3-10, cols 12-13
   for (let i = 0; i < 8; i++) {
-    board[3 + i][13] = { type: backPieces[i], color: "green" }
+    board[10 - i][13] = { type: backPieces[i], color: "green" }
     board[3 + i][12] = { type: "pawn", color: "green" }
   }
 
@@ -210,72 +210,163 @@ function getKnightMoves(board, position, color, moves) {
 // Add this new function right before `getKingMoves`
 function addCastlingMoves(board, position, color, moves) {
   const { row, col } = position
+  console.log(`[${color}] Checking castling availability from position [${row};${col}]`);
 
-  // Can't castle while in check
-  if (isPositionUnderAttack(board, position, color)) return
-
-  let kingSideRookPos, queenSideRookPos
-  let kingPath, queenPath
-  let castlingTarget = { kingSide: null, queenSide: null }
-
-  switch (color) {
-    case "red":
-    case "yellow":
-      kingSideRookPos = { row, col: col + 3 }
-      queenSideRookPos = { row, col: col - 4 }
-      kingPath = [ { row, col: col + 1 }, { row, col: col + 2 } ]
-      queenPath = [ { row, col: col - 1 }, { row, col: col - 2 } ]
-      castlingTarget.kingSide = { row, col: col + 2 }
-      castlingTarget.queenSide = { row, col: col - 2 }
-      break
-
-    case "blue":
-      kingSideRookPos = { row: row + 3, col }
-      queenSideRookPos = { row: row - 4, col }
-      kingPath = [ { row: row + 1, col }, { row: row + 2, col } ]
-      queenPath = [ { row: row - 1, col }, { row: row - 2, col } ]
-      castlingTarget.kingSide = { row: row + 2, col }
-      castlingTarget.queenSide = { row: row - 2, col }
-      break
-
-    case "green":
-      kingSideRookPos = { row: row - 3, col }
-      queenSideRookPos = { row: row + 4, col }
-      kingPath = [ { row: row - 1, col }, { row: row - 2, col } ]
-      queenPath = [ { row: row + 1, col }, { row: row + 2, col } ]
-      castlingTarget.kingSide = { row: row - 2, col }
-      castlingTarget.queenSide = { row: row + 2, col }
-      break
+  // Check if king is in check (can't castle while in check)
+  if (isPositionUnderAttack(board, position, color)) {
+    console.log(`[${color}] King is under attack — castling blocked.`);
+    return
   }
 
-  function isPathClear(path) {
-    for (const pos of path) {
-      if (!isValidPosition(pos) || board[pos.row][pos.col] !== null) return false
-      if (isPositionUnderAttack(board, pos, color)) return false
-    }
-    return true
+  // Determine rook positions based on player color
+  const rookOffsets = {
+    yellow: { kingSide: { row: 0, col: -3 }, queenSide: { row: 0, col: 4 } },
+    red: { kingSide: { row: 0, col: 3 }, queenSide: { row: 0, col: -4 } },
+    blue: { kingSide: { row: 3, col: 0 }, queenSide: { row: -4, col: 0 } },
+    green: { kingSide: { row: -3, col: 0 }, queenSide: { row: 4, col: 0 } }
   }
+
+  const rookOffset = rookOffsets[color]
+
+  const kingSideRookRow = row + rookOffset.kingSide.row
+  const kingSideRookCol = col + rookOffset.kingSide.col
+  
+  const queenSideRookRow = row + rookOffset.queenSide.row
+  const queenSideRookCol = col + rookOffset.queenSide.col
 
   // King-side castling
-  if (
-    isValidPosition(kingSideRookPos) &&
-    board[kingSideRookPos.row][kingSideRookPos.col]?.type === "rook" &&
-    board[kingSideRookPos.row][kingSideRookPos.col]?.color === color &&
-    !board[kingSideRookPos.row][kingSideRookPos.col]?.hasMoved &&
-    isPathClear(kingPath)
-  ) {
-    moves.push(castlingTarget.kingSide)
+  if (isValidPosition({ row: kingSideRookRow, col: kingSideRookCol })) {
+    const rook = board[kingSideRookRow][kingSideRookCol]
+    console.log(`[${color}] King-side rook at [${kingSideRookRow};${kingSideRookCol}] is`, rook);
+
+    if (rook && rook.type === "rook" && rook.color === color && !rook.hasMoved) {
+      let canCastle = true
+
+      // Check if squares between king and rook are empty
+      if (kingSideRookRow === row) {
+        // Horizontal check
+        const step = kingSideRookCol > col ? 1 : -1
+        for (let c = col + step; c !== kingSideRookCol; c += step) {
+          if (board[row][c] !== null) {
+            canCastle = false
+            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
+            break
+          }
+        }
+      } else if (kingSideRookCol === col) {
+        // Vertical check
+        const step = kingSideRookRow > row ? 1 : -1
+        for (let r = row + step; r !== kingSideRookRow; r += step) {
+          if (board[r][col] !== null) {
+            canCastle = false
+            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
+            break
+          }
+        }
+      }
+
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        const rowDelta = Math.sign(kingSideRookRow - row)
+        const colDelta = Math.sign(kingSideRookCol - col)
+
+        for (let i = 0; i <= 2; i++) {
+          const checkRow = row + i * rowDelta
+          const checkCol = col + i * colDelta
+
+          if (
+            !isValidPosition({ row: checkRow, col: checkCol }) ||
+            isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
+          ) {
+            canCastle = false
+            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        console.log(color + " - no check if king passes, castle continues!")
+        const rowDelta = Math.sign(kingSideRookRow - row)
+        const colDelta = Math.sign(kingSideRookCol - col)
+      
+        const castleMove = {
+          row: row + 2 * rowDelta,
+          col: col + 2 * colDelta,
+          isCastling: true
+        }
+
+        console.log(`[${color}] ✅ King-side castling allowed: ${JSON.stringify(castleMove)}`);
+      
+        moves.push(castleMove)
+      }      
+    }
   }
 
   // Queen-side castling
-  if (
-    isValidPosition(queenSideRookPos) &&
-    board[queenSideRookPos.row][queenSideRookPos.col]?.type === "rook" &&
-    board[queenSideRookPos.row][queenSideRookPos.col]?.color === color &&
-    !board[queenSideRookPos.row][queenSideRookPos.col]?.hasMoved &&
-    isPathClear(queenPath)
-  ) {
-    moves.push(castlingTarget.queenSide)
+  if (isValidPosition({ row: queenSideRookRow, col: queenSideRookCol })) {
+    const rook = board[queenSideRookRow][queenSideRookCol]
+    console.log(`[${color}] Queen-side rook at [${queenSideRookRow};${queenSideRookCol}] is`, rook);
+
+    if (rook && rook.type === "rook" && rook.color === color && !rook.hasMoved) {
+      // Check if squares between king and rook are empty
+      let canCastle = true
+      if (queenSideRookRow === row) {
+        // Horizontal check
+        const step = queenSideRookCol > col ? 1 : -1
+        for (let c = col + step; c !== queenSideRookCol; c += step) {
+          if (board[row][c] !== null) {
+            canCastle = false
+            console.log(`[${color}] Blocked at [${row};${c}] — piece between king and rook`);
+            break
+          }
+        }
+      } else if (queenSideRookCol === col) {
+        // Vertical check
+        const step = queenSideRookRow > row ? 1 : -1
+        for (let r = row + step; r !== queenSideRookRow; r += step) {
+          if (board[r][col] !== null) {
+            canCastle = false
+            console.log(`[${color}] Blocked at [${r};${col}] — piece between king and rook`);
+            break
+          }
+        }
+      }
+
+      // Check if king passes through or ends up in check
+      if (canCastle) {
+        const rowDelta = Math.sign(queenSideRookRow - row)
+        const colDelta = Math.sign(queenSideRookCol - col)
+
+        for (let i = 0; i <= 2; i++) {
+          const checkRow = row + i * rowDelta
+          const checkCol = col + i * colDelta
+
+          if (
+            !isValidPosition({ row: checkRow, col: checkCol }) ||
+            isPositionUnderAttack(board, { row: checkRow, col: checkCol }, color)
+          ) {
+            canCastle = false
+            console.log(`[${color}] Castling path under attack at [${checkRow};${checkCol}]`);
+            break
+          }
+        }
+      }
+
+      if (canCastle) {
+        const rowDelta = Math.sign(queenSideRookRow - row)
+        const colDelta = Math.sign(queenSideRookCol - col)
+      
+        const castleMove = {
+          row: row + 2 * rowDelta,
+          col: col + 2 * colDelta,
+          isCastling: true
+        }
+      
+        console.log(`[${color}] ✅ Queen-side castling allowed: ${JSON.stringify(castleMove)}`);
+        moves.push(castleMove)
+      }
+    }
   }
 }
 
@@ -364,6 +455,21 @@ function isPositionUnderAttack(board, position, playerColor) {
   return false
 }
 
+function isPathClear(board, start, end) {
+  const rowStep = Math.sign(end.row - start.row)
+  const colStep = Math.sign(end.col - start.col)
+
+  let currentRow = start.row + rowStep
+  let currentCol = start.col + colStep
+
+  while (currentRow !== end.row || currentCol !== end.col) {
+    if (board[currentRow][currentCol] !== null) return false
+    currentRow += rowStep
+    currentCol += colStep
+  }
+  return true
+}
+
 // Replace the existing `getAvailableMoves` function with this one:
 function getAvailableMoves(board, position) {
   const moves = getAvailableMovesWithoutCheckValidation(board, position, true) // Allow castling
@@ -378,17 +484,70 @@ function getAvailableMoves(board, position) {
     const newBoard = board.map((row) => [...row])
 
     // Handle castling move simulation
-    if (piece.type === "king" && Math.abs(move.col - col) === 2) {
+    if (piece.type === "king" && (Math.abs(move.col - col) === 2 || Math.abs(move.row - row) === 2) && move.isCastling) {
+      console.log(`[${piece.color}] ⏳ Castling move initiated from (${row}, ${col}) to (${move.row}, ${move.col})`)
+      
       // This is a castling move
-      const isKingSide = move.col > col
-      const rookCol = isKingSide ? col + 3 : col - 4
-      const rookNewCol = isKingSide ? col + 1 : col - 1
+      const rowDelta = move.row - row
+      const colDelta = move.col - col
+
+      const direction = {
+        row: Math.sign(rowDelta),
+        col: Math.sign(colDelta)
+      }
+
+      let rookRow = row
+      let rookCol = col
+      let foundRook = false
+
+      for (let i = 1; i <= 4; i++) {
+        const testRow = row + i * direction.row
+        const testCol = col + i * direction.col
+        if (!isValidPosition({ row: testRow, col: testCol })) {
+          console.log(`[${piece.color}] ❌ Invalid position while searching for rook at (${testRow}, ${testCol})`)
+          break
+        }
+
+        const maybeRook = board[testRow][testCol]
+        if (maybeRook && maybeRook.type === "rook" && maybeRook.color === piece.color) {
+          rookRow = testRow
+          rookCol = testCol
+          foundRook = true
+          console.log(`[${piece.color}] ✅ Rook found at (${rookRow}, ${rookCol})`)
+          break
+        }
+      }
+
+      if(!foundRook) {
+        console.log(`[${piece.color}] ❌ No rook found in castling direction`)
+        return false
+      }
+
+      if (!isPathClear(newBoard, { row, col }, { row: rookRow, col: rookCol })) {
+        console.log(`[${piece.color}] ❌ Path is blocked between king and rook`)
+        return false; // block castling move because pieces in between
+      }
+
+      const rookNewRow = row + direction.row
+      const rookNewCol = col + direction.col
+
+      console.log(`[${piece.color}] 🔁 Moving king to (${move.row}, ${move.col})`)
+      console.log(`[${piece.color}] 🔁 Moving rook from (${rookRow}, ${rookCol}) to (${rookNewRow}, ${rookNewCol})`)
 
       // Move king and rook
       newBoard[move.row][move.col] = piece
       newBoard[row][col] = null
-      newBoard[row][rookNewCol] = newBoard[row][rookCol]
-      newBoard[row][rookCol] = null
+      const rook = newBoard[rookRow][rookCol]
+      if (!rook) {
+        console.warn(`[${piece.color}] ❌ No rook found at expected position (${rookRow}, ${rookCol}) when moving`)
+        return false
+      }
+      newBoard[rookNewRow][rookNewCol] = rook
+      newBoard[rookRow][rookCol] = null
+
+      console.log(`[${piece.color}] 🧩 Final board state (simplified):`)
+      console.log(`King at (${move.row}, ${move.col}):`, newBoard[move.row][move.col])
+      console.log(`Rook at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
     } else {
       // Regular move
       newBoard[move.row][move.col] = piece
@@ -614,39 +773,92 @@ function executeMove(room, from, to) {
 
   movingPieceData.hasMoved = true
 
-  const dx = Math.abs(to.col - from.col);
-  const dy = Math.abs(to.row - from.row);
+  if (movingPieceData.type === "king" && (Math.abs(to.col - from.col) === 2 || Math.abs(to.row - from.row) === 2) && to.isCastling) {
+    console.log("pepa")
 
-  if (pieceBeingMoved.type === "king" && (Math.abs(dx) === 2 ^ Math.abs(dy) === 2)) {
-    switch (pieceBeingMoved.color) {
-      case "red": {
-        if (dx == -2) {
+    console.log(`[${movingPieceData.color}] ⏳ Castling move initiated from (${from.row}, ${from.col}) to (${to.row}, ${to.col})`)
 
-        }
-        break;
-      }
-      case "yellow": {
-        const rookFromCol = dx > 0 ? from.col + 3 : from.col - 4
-        const rookToCol = dx > 0 ? from.col + 1 : from.col - 1
-        boardBeforeMove[from.row][rookToCol] = boardBeforeMove[from.row][rookFromCol]
-        boardBeforeMove[from.row][rookFromCol] = null
+    const rowDelta = to.row - from.row
+    const colDelta = to.col - from.col
+
+    const direction = {
+      row: Math.sign(rowDelta),
+      col: Math.sign(colDelta),
+    }
+
+    let rookRow = from.row
+    let rookCol = from.col
+    let foundRook = false
+
+    for (let i = 1; i <= 4; i++) {
+      const testRow = from.row + i * direction.row
+      const testCol = from.col + i * direction.col
+      if (!isValidPosition({ row: testRow, col: testCol })) {
+        console.log(`[${movingPieceData.color}] ❌ Invalid position while searching for rook at (${testRow}, ${testCol})`)
         break
       }
-      case "blue": {
-        const rookFromRow = dy > 0 ? from.row + 3 : from.row - 4
-        const rookToRow = dy > 0 ? from.row + 1 : from.row - 1
-        boardBeforeMove[rookToRow][from.col] = boardBeforeMove[rookFromRow][from.col]
-        boardBeforeMove[rookFromRow][from.col] = null
-        break
-      }
-      case "green": {
-        const rookFromRow = dy < 0 ? from.row - 3 : from.row + 4
-        const rookToRow = dy < 0 ? from.row - 1 : from.row + 1
-        boardBeforeMove[rookToRow][from.col] = boardBeforeMove[rookFromRow][from.col]
-        boardBeforeMove[rookFromRow][from.col] = null
+  
+      const maybeRook = newBoard[testRow][testCol]
+      if (maybeRook && maybeRook.type === "rook" && maybeRook.color === movingPieceData.color) {
+        rookRow = testRow
+        rookCol = testCol
+        foundRook = true
+        console.log(`[${movingPieceData.color}] ✅ Rook found at (${rookRow}, ${rookCol})`)
         break
       }
     }
+
+    if (!foundRook) {
+      console.log(`[${movingPieceData.color}] ❌ No rook found in castling direction`)
+      return null
+    }
+  
+    if (!isPathClear(newBoard, { row: from.row, col: from.col }, { row: rookRow, col: rookCol })) {
+      console.log(`[${movingPieceData.color}] ❌ Path is blocked between king and rook`)
+      return null
+    }
+
+    const rookNewRow = to.row - direction.row
+    const rookNewCol = to.col - direction.col
+
+    const movingRook = { ...newBoard[rookRow][rookCol], hasMoved: true }
+
+    newBoard[to.row][to.col] = { ...movingPieceData, hasMoved: true } // Move king
+    newBoard[from.row][from.col] = null
+    newBoard[rookNewRow][rookNewCol] = movingRook // Move rook
+    newBoard[rookRow][rookCol] = null
+
+    console.log(`[${movingPieceData.color}] 🔁 Moving king to (${to.row}, ${to.col})`)
+    console.log(`[${movingPieceData.color}] 🔁 Moving rook from (${rookRow}, ${rookCol}) to (${rookNewRow}, ${rookNewCol})`)
+    console.log(`[${movingPieceData.color}] 🧩 Final board state (simplified):`)
+    console.log(`King at (${to.row}, ${to.col}):`, newBoard[to.row][to.col])
+    console.log(`Rook at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
+
+    // Apply final state + log move
+    room.gameState.board = newBoard
+    updateGameStatus(room)
+
+    const player = room.players.find((p) => p.color === movingPieceData.color)
+    const playerName = player ? player.name : `AI ${movingPieceData.color}`
+
+    if (!room.gameState.moveHistory) {
+      room.gameState.moveHistory = []
+    }
+
+    const moveRecord = {
+      from,
+      to,
+      piece: movingPieceData,
+      capturedPiece: null,
+      playerColor: movingPieceData.color,
+      playerName,
+      moveNumber: room.gameState.moveHistory.length + 1,
+      timestamp: Date.now(),
+      eliminatedPlayersAfterMove: [...room.gameState.eliminatedPlayers],
+    }
+
+    room.gameState.moveHistory.push(moveRecord)
+    return moveRecord
   }
 
   if (movingPieceData.type === "pawn") {
@@ -728,6 +940,18 @@ function findKingPosition(board, color) {
     }
   }
   return null // King not found (should not happen in a valid game state)
+}
+
+function findFullMove(room, from, to) {
+  const { board, currentPlayer } = room.gameState
+  const legalMoves = getAllLegalMovesForPlayer(board, currentPlayer)
+  
+  return legalMoves.find(move => 
+    move.from.row === from.row &&
+    move.from.col === from.col &&
+    move.to.row === to.row &&
+    move.to.col === to.col
+  )
 }
 
 app.prepare().then(() => {
@@ -891,7 +1115,13 @@ app.prepare().then(() => {
         aiMoveTimers.delete(roomId)
       }
 
-      const move = executeMove(room, from, to)
+      const fullMove = findFullMove(room, from, to)
+      if (!fullMove) {
+        return socket.emit("error", "Invalid move")
+      }
+
+      const move = executeMove(room, fullMove.from, fullMove.to)
+      
       if (move) {
         console.log(`Move executed: ${player.name} moved from (${from.row},${from.col}) to (${to.row},${to.col})`)
         // gameState sent here includes the updated moveHistory and board after eliminations

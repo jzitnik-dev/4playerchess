@@ -35,7 +35,7 @@ function setupYellowPieces(board: (Piece | null)[][]) {
 
 function setupBluePieces(board: (Piece | null)[][]) {
   // Back rank (col 0)
-  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"]
+  const backPieces: Piece["type"][] = ["rook", "knight", "bishop", "king", "queen", "bishop", "knight", "rook"]
   for (let i = 0; i < 8; i++) {
     board[3 + i][0] = { type: backPieces[i], color: "blue" }
   }

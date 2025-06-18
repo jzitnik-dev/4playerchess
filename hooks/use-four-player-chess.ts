@@ -6,6 +6,11 @@ import { initializeBoard } from "@/utils/board-setup"
 import { getAvailableMoves } from "@/utils/move-calculator"
 import { isPositionUnderAttack, findKingPosition } from "@/utils/game-logic"
 
+type Position = {
+  row: number
+  col: number
+}
+
 // Updated player order to start with Red and go clockwise
 const PLAYER_ORDER: PieceColor[] = ["red", "blue", "yellow", "green"]
 
@@ -112,6 +117,38 @@ export function useFourPlayerChess() {
     return PLAYER_ORDER[nextIndex]
   }, [])
 
+  function isValidPosition(position: Position): boolean {
+    const { row, col } = position
+  
+    // Check board boundaries
+    if (row < 0 || row >= 14 || col < 0 || col >= 14) return false
+  
+    // Check if the square is part of the playable cross
+    const isPlayableSquare =
+      (row >= 0 && row <= 2 && col >= 3 && col <= 10) ||
+      (row >= 3 && row <= 10 && col >= 0 && col <= 13) ||
+      (row >= 11 && row <= 13 && col >= 3 && col <= 10)
+  
+    return isPlayableSquare
+  }
+
+  function isPathClear(board: (Piece | null)[][], start: Position, end: Position): boolean {
+    const rowStep = Math.sign(end.row - start.row)
+    const colStep = Math.sign(end.col - start.col)
+  
+    let currentRow = start.row + rowStep
+    let currentCol = start.col + colStep
+  
+    while (currentRow !== end.row || currentCol !== end.col) {
+      if (board[currentRow][currentCol] !== null) {
+        return false
+      }
+      currentRow += rowStep
+      currentCol += colStep
+    }
+    return true
+  }
+
   const handleSquareClick = useCallback(
     (row: number, col: number) => {
       const { board, currentPlayer, selectedPiece, eliminatedPlayers } = gameState
@@ -175,17 +212,68 @@ export function useFourPlayerChess() {
           movingPiece.hasMoved = true
 
           // Handle castling
-          if (movingPiece.type === "king" && Math.abs(col - selectedPiece.col) === 2) {
+          if (movingPiece.type === "king" && (Math.abs(row - selectedPiece.row) === 2 || Math.abs(col - selectedPiece.col) === 2)) {
+            console.log(`[${movingPiece.color}] ⏳ Castling UI move from (${selectedPiece.row}, ${selectedPiece.col}) to (${row}, ${col})`)
+            
             // This is a castling move
-            const isKingSide = col > selectedPiece.col
-            const rookCol = isKingSide ? selectedPiece.col + 3 : selectedPiece.col - 4
-            const rookNewCol = isKingSide ? selectedPiece.col + 1 : selectedPiece.col - 1
+            const rowDelta = row - selectedPiece.row
+            const colDelta = col - selectedPiece.col
 
-            // Move the rook
-            const rook = { ...newBoard[selectedPiece.row][rookCol]! }
+            const direction = {
+              row: Math.sign(rowDelta),
+              col: Math.sign(colDelta)
+            }
+
+            let rookRow = selectedPiece.row
+            let rookCol = selectedPiece.col
+            let foundRook = false
+
+            for (let i = 1; i <= 4; i++) {
+              const testRow = selectedPiece.row + i * direction.row
+              const testCol = selectedPiece.col + i * direction.col
+
+              if (!isValidPosition({ row: testRow, col: testCol })) {
+                console.log(`[${movingPiece.color}] ❌ Invalid rook search position at (${testRow}, ${testCol})`)
+                break
+              }
+
+              const maybeRook = newBoard[testRow][testCol]
+              if (maybeRook && maybeRook.type === "rook" && maybeRook.color === movingPiece.color) {
+                rookRow = testRow
+                rookCol = testCol
+                foundRook = true
+                console.log(`[${movingPiece.color}] ✅ Rook found at (${rookRow}, ${rookCol})`)
+                break
+              }
+            }
+
+            if (!foundRook) {
+              console.log(`[${movingPiece.color}] ❌ No rook found`)
+              return false
+            }
+
+            if (!isPathClear(newBoard, { row, col }, { row: rookRow, col: rookCol })) {
+              console.log(`[${movingPiece.color}] ❌ Castling path is blocked`)
+              return false // Path blocked, castling not allowed
+            }
+
+            const rookNewRow = selectedPiece.row + direction.row
+            const rookNewCol = selectedPiece.col + direction.col
+
+            const rook = newBoard[rookRow][rookCol]
+            if (!rook) {
+              console.warn(`[${movingPiece.color}] ❌ Rook not found at (${rookRow}, ${rookCol}) in UI logic`)
+              return false
+            }
+
             rook.hasMoved = true
-            newBoard[selectedPiece.row][rookNewCol] = rook
-            newBoard[selectedPiece.row][rookCol] = null
+
+            console.log(`[${movingPiece.color}] 🔁 Moving rook from (${rookRow}, ${rookCol}) to (${rookNewRow}, ${rookNewCol})`)
+            newBoard[rookNewRow][rookNewCol] = rook
+            newBoard[rookRow][rookCol] = null
+
+            console.log(`[${movingPiece.color}] 🧩 Final board state (UI logic):`)
+            console.log(`Rook now at (${rookNewRow}, ${rookNewCol}):`, newBoard[rookNewRow][rookNewCol])
           }
 
           // Handle pawn promotion (8th rank from each player's perspective)
